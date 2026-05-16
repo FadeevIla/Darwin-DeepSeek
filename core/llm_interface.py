@@ -74,8 +74,10 @@ class LLMInterface:
 
     @staticmethod
     def _clean(raw):
+        """Очищает вывод LLM от markdown и пояснений."""
         cleaned = raw.strip()
-        # Убираем markdown
+
+        # Убираем markdown-обёртку
         if cleaned.startswith("```"):
             lines = cleaned.split("\n")
             if lines[0].startswith("```"):
@@ -83,12 +85,20 @@ class LLMInterface:
             if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]
             cleaned = "\n".join(lines)
-        # Убираем пояснения в начале ("Вот исправленный код:", "Here is the fixed code:")
+
+        # Убираем ВСЕ строки, которые содержат ТОЛЬКО ``` (могут быть в середине)
+        lines = cleaned.split("\n")
+        lines = [l for l in lines if l.strip() != "```"]
+        cleaned = "\n".join(lines)
+
+        # Убираем пояснения перед кодом
         lines = cleaned.split("\n")
         for i, line in enumerate(lines):
-            if line.strip().startswith(("import ", "from ", "#!", "#!/")):
+            stripped = line.strip()
+            if stripped.startswith(("import ", "from ", "#!", "#!/", "async def", "def ", "class ")):
                 return "\n".join(lines[i:])
-            if not line.strip() or line.strip().startswith(("Вот", "Here", "Конечно", "Sure", "```")):
+            if not stripped or stripped.startswith(("Вот", "Here", "Конечно", "Sure")):
                 continue
             break
+
         return cleaned
