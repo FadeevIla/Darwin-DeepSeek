@@ -72,46 +72,46 @@ async def weather(message: types.Message):
     except Exception as e:
         logger.error(f'Ошибка при получении погоды: {e}')
 
-async def dice(message: types.Message):
-    result = random.randint(1, 6)
-    await message.reply(f'Вы бросили кубик и выпало: {result}')
+async def echo(message: types.Message):
+    await message.reply(message.text)
 
 async def stats(message: types.Message):
-    await message.reply('Статистика бота пока недоступна.')
+    await message.reply('Статистика пока недоступна.')
 
 async def poll(message: types.Message):
-    await message.reply('Опросы пока не реализованы.')
+    await message.reply('Опрос пока недоступен.')
 
 async def remind(message: types.Message):
-    await message.reply('Напоминания пока не реализованы.')
+    await message.reply('Напоминание пока недоступно.')
 
 async def info(message: types.Message):
-    await message.reply('Информация о боте: версия 1.0')
+    await message.reply('Информация пока недоступна.')
 
 async def whatsnew(message: types.Message):
-    await message.reply('Новое: добавлена команда /dice')
+    await message.reply('Новости пока недоступны.')
 
 async def remind_me(message: types.Message):
-    await message.reply('Напоминания пока недоступны.')
+    await message.reply('Напоминание пока недоступно.')
 
 async def horoscope(message: types.Message):
     await message.reply('Гороскоп пока недоступен.')
 
 async def random_command(message: types.Message):
-    await message.reply(f'Случайное число: {random.randint(1, 100)}')
+    await message.reply(str(random.randint(1, 100)))
 
 async def timer(message: types.Message):
     await message.reply('Таймер пока недоступен.')
 
 async def suggest(message: types.Message):
-    await message.reply('Предложения пока не принимаются.')
+    await message.reply('Предложение пока недоступно.')
 
 async def coinflip(message: types.Message):
-    result = random.choice(['Орел', 'Решка'])
-    await message.reply(f'Монетка упала: {result}')
+    result = random.choice(['Орёл', 'Решка'])
+    await message.reply(result)
 
-async def echo(message: types.Message):
-    await message.reply(message.text.replace('/echo ', '', 1) if len(message.text) > 6 else 'Пожалуйста, введите текст после команды.')
+async def dice(message: types.Message):
+    result = random.randint(1, 6)
+    await message.reply(str(result))
 
 dp.register_message_handler(start, commands=['start'])
 dp.register_message_handler(help_command, commands=['help'])
