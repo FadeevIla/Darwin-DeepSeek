@@ -16,19 +16,23 @@ class LLMInterface:
     def analyze_bugs(self, code):
         self.logger.info("LLM: поиск багов")
         system_prompt = (
-            "Ты — senior Python-разработчик. Исправь ВСЕ баги в коде телеграм-бота "
-            "на aiogram 2.25.1. НЕ используй reply_text — только reply или answer. "
-            "Верни ПОЛНЫЙ код без markdown."
+            "Ты — senior Python-разработчик.\n"
+            "Верни ТОЛЬКО исправленный код телеграм-бота на aiogram 2.25.1. Никаких пояснений.\n"
+            "Первая строка твоего ответа должна быть `import` или `from`.\n"
+            "Не используй reply_text — только reply или answer.\n"
+            "Не оборачивай код в ``` или ```python."
         )
         return self._call(code, system_prompt, temperature=0.2)
 
     def generate_feature(self, code):
         self.logger.info("LLM: генерация фичи")
         system_prompt = (
-            "Ты — разработчик телеграм-ботов на aiogram 2.25.1. "
-            "Добавь ОДНУ новую ПОЛНОСТЬЮ РАБОЧУЮ команду. "
-            "НЕ используй reply_text — только reply или answer. "
-            "Верни ПОЛНЫЙ код без markdown."
+            "Ты — разработчик телеграм-ботов на aiogram 2.25.1.\n"
+            "Добавь одну новую полностью рабочую команду.\n"
+            "Верни ТОЛЬКО полный код. Никаких пояснений.\n"
+            "Первая строка твоего ответа должна быть `import` или `from`.\n"
+            "Не используй reply_text — только reply или answer.\n"
+            "Не оборачивай код в ``` или ```python."
         )
         return self._call(code, system_prompt, temperature=1.0)
 
@@ -74,55 +78,18 @@ class LLMInterface:
 
     @staticmethod
     def _clean(raw):
-        """Очищает вывод LLM от markdown и пояснений."""
+        """Минимальная очистка вывода LLM."""
         cleaned = raw.strip()
 
-        # Циклично убираем markdown и пояснения, пока первая строка не станет кодом
-        for _ in range(5):  # максимум 5 попыток
-            # Убираем открывающие ```python или ```
-            if cleaned.startswith("```"):
-                lines = cleaned.split("\n")
-                lines = lines[1:]  # убираем первую строку с ```
-                if lines and lines[-1].strip() == "```":
-                    lines = lines[:-1]
-                cleaned = "\n".join(lines).strip()
-                continue
-
-            # Убираем одиночные ``` в любой строке
+        # На всякий случай убираем ```
+        if cleaned.startswith("```"):
             lines = cleaned.split("\n")
-            lines = [l for l in lines if l.strip() != "```"]
-            cleaned = "\n".join(lines).strip()
+            lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            cleaned = "\n".join(lines)
 
-            # Проверяем первую непустую строку
-            first_line = ""
-            for line in cleaned.split("\n"):
-                if line.strip():
-                    first_line = line.strip()
-                    break
+        # Убираем строки, состоящие только из ```
+        lines = [l for l in cleaned.split("\n") if l.strip() != "```"]
 
-            # Если первая строка — пояснение, убираем его
-            if first_line and not first_line.startswith(
-                    ("import ", "from ", "#!", "#!/", "async def ", "def ", "class ", "BOT_TOKEN", "logger")):
-                # Это пояснение — убираем первую строку
-                lines = cleaned.split("\n")
-                for i, line in enumerate(lines):
-                    if line.strip():
-                        # Проверяем, похоже ли на код
-                        if line.strip().startswith(
-                                ("import ", "from ", "#!", "#!/", "async def ", "def ", "class ", "BOT_TOKEN",
-                                 "logger")):
-                            cleaned = "\n".join(lines[i:])
-                            break
-                        elif not line.strip().startswith(
-                                ("Вот", "Here", "Конечно", "Sure", "Я", "Исправленный", "Ниже", "Below")):
-                            # Неизвестная строка — оставляем как есть
-                            break
-                        else:
-                            # Пояснение — пропускаем
-                            continue
-                break
-            else:
-                # Первая строка — код, выходим
-                break
-
-        return cleaned
+        return "\n".join(lines)
