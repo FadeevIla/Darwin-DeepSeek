@@ -76,27 +76,21 @@ async def stats(message: types.Message):
     await message.reply(f'Список команд: {", ".join(commands)}')
 
 async def poll(message: types.Message):
-    # недостающий код для обработки опроса
     await message.reply('Опрос не доступен')
 
 async def remind(message: types.Message):
-    # недостающий код для обработки напоминания
     await message.reply('Напоминание не доступно')
 
 async def info(message: types.Message):
-    # недостающий код для обработки информации
     await message.reply('Информация не доступна')
 
 async def whatsnew(message: types.Message):
-    # недостающий код для обработки новостей
     await message.reply('Новости не доступны')
 
 async def remind_me(message: types.Message):
-    # недостающий код для обработки напоминания
     await message.reply('Напоминание не доступно')
 
 async def horoscope(message: types.Message):
-    # недостающий код для обработки гороскопа
     await message.reply('Гороскоп не доступен')
 
 async def random_command(message: types.Message):
