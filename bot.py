@@ -71,65 +71,55 @@ async def weather(message: types.Message):
                     await message.reply('Ошибка. Проверьте город или ключ от API.')
     except Exception as e:
         logger.error(f'Ошибка при получении погоды: {e}')
-        await message.reply('Ошибка при получении погоды.')
+        await message.reply('Произошла ошибка при получении погоды.')
 
 async def echo(message: types.Message):
-    text = message.get_args()
-    if text:
-        await message.reply(f'Вы написали: {text}')
-    else:
-        await message.reply('Введите текст после команды /echo')
+    text = message.text.replace('/echo ', '', 1)
+    await message.reply(text)
 
 async def stats(message: types.Message):
-    await message.reply('Статистика пока недоступна.')
+    await message.reply('Статистика бота: пока не реализована.')
 
 async def poll(message: types.Message):
-    await message.reply('Голосование пока не реализовано.')
+    await message.reply('Опрос: пока не реализован.')
 
 async def remind(message: types.Message):
-    await message.reply('Напомните мне через 10 секунд!')
+    await message.reply('Напоминание: пока не реализовано.')
 
 async def info(message: types.Message):
-    await message.reply('Информация о боте.')
+    await message.reply('Информация о боте: версия 1.0.')
 
 async def whatsnew(message: types.Message):
-    await message.reply('Новое: добавлены команды /giveaway и /remindme.')
+    await message.reply('Что нового: исправлены ошибки.')
 
 async def remind_me(message: types.Message):
-    await message.reply('Напоминалка установлена!')
+    await message.reply('Напоминание установлено (заглушка).')
 
 async def horoscope(message: types.Message):
-    signs = ['Овен', 'Телец', 'Близнецы', 'Рак', 'Лев', 'Дева', 'Весы', 'Скорпион', 'Стрелец', 'Козерог', 'Водолей', 'Рыбы']
-    sign = random.choice(signs)
-    await message.reply(f'Гороскоп для {sign}: Сегодня удачный день!')
+    await message.reply('Гороскоп: сегодня удачный день!')
 
 async def random_command(message: types.Message):
-    number = random.randint(1, 100)
-    await message.reply(f'Случайное число: {number}')
+    await message.reply(f'Случайное число: {random.randint(1, 100)}')
 
 async def timer(message: types.Message):
-    from aiogram.types import ReplyKeyboardRemove
-    await message.reply('Таймер запущен на 5 секунд!')
-    await asyncio.sleep(5)
-    await message.reply('Время вышло!')
+    await message.reply('Таймер: пока не реализован.')
 
 async def suggest(message: types.Message):
-    suggestions = ['Попробуй /coinflip', 'Попробуй /dice', 'Попробуй /joke']
-    await message.reply(random.choice(suggestions))
+    await message.reply('Предложение: попробуйте что-то новое!')
 
 async def coinflip(message: types.Message):
-    result = random.choice(['Орел', 'Решка'])
-    await message.reply(f'Монетка: {result}')
+    result = random.choice(['Орёл', 'Решка'])
+    await message.reply(f'Результат: {result}')
 
 async def dice(message: types.Message):
     result = random.randint(1, 6)
-    await message.reply(f'Кубик показал: {result}')
+    await message.reply(f'Выпало: {result}')
 
 async def giveaway(message: types.Message):
-    await message.reply('Розыгрыш! Напишите /giveaway, чтобы принять участие!')
+    await message.reply('Розыгрыш: пока не активен.')
 
 async def support(message: types.Message):
-    await message.reply('Если у вас возникли вопросы, напишите @support_username')
+    await message.reply('Поддержка: напишите @admin')
 
 dp.register_message_handler(start, commands=['start'])
 dp.register_message_handler(help_command, commands=['help'])
