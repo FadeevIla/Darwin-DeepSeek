@@ -1,14 +1,14 @@
+from aiogram import Bot, Dispatcher, types
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.utils import executor
+from core import environ_map, update_notifier
+from datetime import datetime, timedelta
 import secrets
 import asyncio
 import random
 import logging
 import aiohttp
 import os
-from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.utils import executor
-from core import environ_map, update_notifier
-from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 BOT_TOKEN = environ_map['TELEGRAM_BOT_TOKEN']
@@ -71,45 +71,39 @@ async def weather(message: types.Message):
                     await message.reply('Ошибка. Проверьте город или ключ от API.')
     except Exception as e:
         logger.error(f'Ошибка при получении погоды: {e}')
-        await message.reply('Произошла ошибка при получении погоды.')
 
 async def echo(message: types.Message):
-    text = message.get_args()
-    if not text:
-        await message.reply('Пожалуйста, укажите текст после команды /echo.')
-    else:
-        await message.reply(f'Вы сказали: {text}')
+    await message.reply(message.text)
 
 async def stats(message: types.Message):
-    await message.reply('Статистика: Бот активен.')
+    await message.reply('Статистика бота пока недоступна.')
 
 async def poll(message: types.Message):
-    await message.reply('Опрос не реализован.')
+    await message.reply('Функция опроса пока не реализована.')
 
 async def remind(message: types.Message):
-    await message.reply('Напоминание не реализовано.')
+    await message.reply('Функция напоминания пока не реализована.')
 
 async def info(message: types.Message):
-    await message.reply('Информация: Бот версии 1.0.')
+    await message.reply('Информация о боте: версия 1.0')
 
 async def whatsnew(message: types.Message):
-    await message.reply('Новое: Добавлена команда /echo.')
+    await message.reply('Новое в этой версии: добавлены команды /horoscope, /random, /timer, /suggest, /coinflip')
 
 async def remind_me(message: types.Message):
-    await message.reply('Функция remindme не реализована.')
+    await message.reply('Функция напоминания пока не реализована.')
 
 async def horoscope(message: types.Message):
-    await message.reply('Гороскоп не реализован.')
+    await message.reply('Гороскоп пока недоступен.')
 
 async def random_command(message: types.Message):
     await message.reply(str(random.randint(1, 100)))
 
 async def timer(message: types.Message):
-    await message.reply('Таймер не реализован.')
+    await message.reply('Функция таймера пока не реализована.')
 
 async def suggest(message: types.Message):
-    suggestions = ['Посмотреть фильм', 'Почитать книгу', 'Пойти гулять']
-    await message.reply(random.choice(suggestions))
+    await message.reply('Предложение: попробуйте что-то новое!')
 
 async def coinflip(message: types.Message):
     result = random.choice(['Орёл', 'Решка'])
