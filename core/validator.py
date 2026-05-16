@@ -16,6 +16,11 @@ class Validator:
             compile(code, "<generated>", "exec")
             return True, None
         except SyntaxError as e:
+            # Выводим проблемную строку
+            lines = code.split("\n")
+            if e.lineno and e.lineno <= len(lines):
+                problem_line = lines[e.lineno - 1]
+                self.logger.warning(f"Проблемная строка {e.lineno}: {problem_line[:100]}")
             return False, f"Синтаксическая ошибка: {e.msg} (строка {e.lineno})"
 
     def validate_imports(self, code):
