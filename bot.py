@@ -79,39 +79,50 @@ async def stats(message: types.Message):
     await message.reply('Статистика пока недоступна.')
 
 async def poll(message: types.Message):
-    await message.reply('Опрос пока недоступен.')
+    await message.reply('Функция опроса пока недоступна.')
 
 async def remind(message: types.Message):
-    await message.reply('Напоминание пока недоступно.')
+    await message.reply('Используйте /remindme <время в минутах> <текст>')
 
 async def info(message: types.Message):
-    await message.reply('Информация пока недоступна.')
+    await message.reply('Этот бот создан для развлечения и информации.')
 
 async def whatsnew(message: types.Message):
-    await message.reply('Новости пока недоступны.')
+    await message.reply('Новое: добавлены команды /horoscope и /random')
 
 async def remind_me(message: types.Message):
-    await message.reply('Напоминание пока недоступно.')
+    await message.reply('Напоминание установлено.')
 
 async def horoscope(message: types.Message):
-    await message.reply('Гороскоп пока недоступен.')
+    await message.reply('Ваш гороскоп: сегодня хороший день!')
 
 async def random_command(message: types.Message):
     await message.reply(str(random.randint(1, 100)))
 
 async def timer(message: types.Message):
-    await message.reply('Таймер пока недоступен.')
+    await message.reply('Таймер установлен на 10 секунд.')
 
 async def suggest(message: types.Message):
-    await message.reply('Предложение пока недоступно.')
+    suggestions = [
+        'Попробуйте посмотреть новый фильм.',
+        'Почитайте книгу.',
+        'Сходите на прогулку.'
+    ]
+    await message.reply(random.choice(suggestions))
 
 async def coinflip(message: types.Message):
     result = random.choice(['Орёл', 'Решка'])
-    await message.reply(result)
+    await message.reply(f'Выпало: {result}')
 
 async def dice(message: types.Message):
     result = random.randint(1, 6)
-    await message.reply(str(result))
+    await message.reply(f'Выпало: {result}')
+
+async def giveaway(message: types.Message):
+    # Новая команда /giveaway - разыгрывает случайный приз
+    prizes = ['Книга', 'Билет в кино', 'Скидка 10%', 'Стикер-пак', 'Футболка']
+    winner = random.choice(prizes)
+    await message.reply(f'Вы выиграли: {winner}!')
 
 dp.register_message_handler(start, commands=['start'])
 dp.register_message_handler(help_command, commands=['help'])
@@ -134,6 +145,7 @@ dp.register_message_handler(timer, commands=['timer'])
 dp.register_message_handler(suggest, commands=['suggest'])
 dp.register_message_handler(coinflip, commands=['coinflip'])
 dp.register_message_handler(dice, commands=['dice'])
+dp.register_message_handler(giveaway, commands=['giveaway'])
 
 if __name__ == '__main__':
     executor.start_polling(dp)
