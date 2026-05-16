@@ -71,47 +71,48 @@ async def weather(message: types.Message):
                     await message.reply('Ошибка. Проверьте город или ключ от API.')
     except Exception as e:
         logger.error(f'Ошибка получения погоды: {e}')
-        await message.reply('Не удалось получить погоду. Проверьте название города.')
+        await message.reply('Произошла ошибка при получении погоды.')
 
 async def echo(message: types.Message):
     await message.reply(message.text)
 
 async def stats(message: types.Message):
-    await message.reply('Статистика бота пока недоступна.')
+    await message.reply('Статистика бота: пока не реализована.')
 
 async def poll(message: types.Message):
-    await message.reply('Функция опросов пока не реализована.')
+    await message.reply('Функция опроса пока не реализована.')
 
 async def remind(message: types.Message):
-    await message.reply('Напоминание установлено (заглушка).')
+    await message.reply('Функция напоминания пока не реализована.')
 
 async def info(message: types.Message):
     await message.reply('Информация о боте: версия 1.0')
 
 async def whatsnew(message: types.Message):
-    await message.reply('Новое в этой версии: исправлены ошибки.')
+    await message.reply('Что нового: добавлены новые команды.')
 
 async def remind_me(message: types.Message):
-    await message.reply('Напоминание установлено (заглушка).')
+    await message.reply('Функция напоминания пока не реализована.')
 
 async def horoscope(message: types.Message):
-    await message.reply('Гороскоп на сегодня: удачный день!')
+    await message.reply('Гороскоп пока не реализован.')
 
 async def random_command(message: types.Message):
     await message.reply(str(random.randint(1, 100)))
 
 async def timer(message: types.Message):
-    await message.reply('Таймер запущен (заглушка).')
+    await message.reply('Таймер пока не реализован.')
 
 async def suggest(message: types.Message):
-    await message.reply('Предложение: попробуйте что-то новое!')
+    await message.reply('Предложение: попробуйте команду /joke')
 
 async def coinflip(message: types.Message):
-    result = 'Орёл' if random.randint(0, 1) == 0 else 'Решка'
-    await message.reply(f'Результат: {result}')
+    result = random.choice(['Орёл', 'Решка'])
+    await message.reply(result)
 
 async def dice(message: types.Message):
-    await message.reply(str(random.randint(1, 6)))
+    result = random.randint(1, 6)
+    await message.reply(str(result))
 
 async def giveaway(message: types.Message):
     await message.reply('Розыгрыш пока не проводится.')
