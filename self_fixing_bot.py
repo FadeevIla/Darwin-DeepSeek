@@ -122,11 +122,10 @@ class DarwinOrchestrator:
                 "Только описание, ничего лишнего."
             )
 
-            # Перебираем модели, пока одна не ответит
+            # Используем DeepSeek (основная и запасная)
             models = [
-                "meta-llama/llama-3.3-70b-instruct:free",
-                "google/gemini-2.0-flash-001:free",
-                "meta-llama/llama-3.1-8b-instruct:free",
+                "deepseek-chat",  # DeepSeek V4 Flash
+                "deepseek-reasoner",  # DeepSeek R1 (запасная)
             ]
 
             description = None

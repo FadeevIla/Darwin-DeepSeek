@@ -38,7 +38,10 @@ class LLMInterface:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Код:\n\n{code}"},
             ],
-            model="deepseek-chat",  # DeepSeek V4 Flash
+            models=[
+                "deepseek-chat",
+                "deepseek-reasoner",
+            ]
             temperature=temperature,
             max_tokens=4000,
         )
