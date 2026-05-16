@@ -1,0 +1,5 @@
+.env
+logs/
+feature_memory.json
+__pycache__/
+*.pyc

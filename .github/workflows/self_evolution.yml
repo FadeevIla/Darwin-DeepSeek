@@ -1,0 +1,38 @@
+# .github/workflows/self_evolution.yml
+# Дарвин: цикл самосовершенствования
+# Запускается каждые 6 часов и вручную
+
+name: Self Evolution Cycle
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # каждые 6 часов
+  workflow_dispatch:        # ручной запуск (кнопка в Actions)
+
+jobs:
+  evolve:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Установка зависимостей
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt --force-reinstall
+
+      - name: Запуск цикла эволюции
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_NAME: ${{ github.repository }}
+          BOT_FILE_PATH: bot.py
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: python self_fixing_bot.py
