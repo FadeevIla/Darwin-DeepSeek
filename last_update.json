@@ -1,6 +1,6 @@
 {
-  "description": "Добавил генерацию случайных чисел, подбрасывание монетки и заглушки для новых функций!",
-  "commit": "8b2b61b41e1a5e3931aaa94d12c22705bfc0e8e5",
-  "timestamp": "2026-05-16T23:08:11.652985+00:00",
-  "version": 9
+  "description": "Добавил 9 новых команд: /horoscope, /random, /timer, /suggest, /coinflip, /dice, /remindme, /giveaway, /ping — теперь бот стал веселее и полезнее!",
+  "commit": "9babfcadd82695d7ac2c78f619e0e5bab3ed2724",
+  "timestamp": "2026-05-16T23:09:33.137782+00:00",
+  "version": 8
 }
