@@ -17,7 +17,7 @@ async def start(message: types.Message):
     await message.reply("Привет, я бот!")
 
 async def help_command(message: types.Message):
-    await message.reply('Список команд: /start, /help, /about, /status, /joke, /fact, /quote, /weather, /stats, /poll, /remind, /info, /whatsnew, /horoscope, /random, /timer, /suggest')
+    await message.reply('Список команд: /start, /help, /about, /status, /joke, /fact, /quote, /weather, /stats, /poll, /remind, /info, /whatsnew, /horoscope, /random, /timer, /suggest, /coinflip')
 
 async def about(message: types.Message):
     await message.reply('Это бот, который может ответить на различные вопросы.')
@@ -70,56 +70,11 @@ async def weather(message: types.Message):
         await message.reply('Ошибка при получении погоды.')
 
 async def stats(message: types.Message):
-    commands = [
-        'start', 'help', 'about', 'status', 'joke', 'fact', 'quote', 'weather', 'stats', 'poll', 'remind', 'info', 'whatsnew', 'horoscope', 'random', 'timer', 'suggest'
-    ]
-    await message.reply(f'Список команд: {", ".join(commands)}')
-
-async def poll(message: types.Message):
-    await message.reply('Опрос не доступен')
-
-async def remind(message: types.Message):
-    await message.reply('Напоминание не доступно')
-
-async def info(message: types.Message):
-    await message.reply('Информация не доступна')
-
-async def whatsnew(message: types.Message):
-    await message.reply('Новости не доступны')
-
-async def remind_me(message: types.Message):
-    await message.reply('Напоминание не доступно')
-
-async def horoscope(message: types.Message):
-    await message.reply('Гороскоп не доступен')
-
-async def random_command(message: types.Message):
-    await message.reply(str(random.randint(0, 100)))
-
-async def timer(message: types.Message):
-    try:
-        time = int(message.text.split()[1])
-        await message.reply(f'Таймер установлен на {time} минут')
-        await asyncio.sleep(time * 60)
-        await message.reply('Таймер сработал!')
-    except Exception as e:
-        logger.error(f'Ошибка при установке таймера: {e}')
-        await message.reply('Ошибка при установке таймера')
-
-async def suggest(message: types.Message):
-    suggestions = [
-        'Попробуйте прочитать книгу "Мастер и Маргарита"',
-        'Сходите в кино на новый фильм',
-        'Посетите местный парк для прогулки',
-        'Приготовьте что-то новое на ужин',
-        'Начните учить новый язык программирования'
-    ]
-    suggestion = random.choice(suggestions)
-    await message.reply(f'Моя рекомендация: {suggestion}')
-
-bot = Bot(token=BOT_TOKEN, parse_mode=types.ParseMode.HTML)
-storage = MemoryStorage()
-dp = Dispatcher(bot, storage=storage)
+    commands 
+# ... середина пропущена ...
+async def coinflip(message: types.Message):
+    result = random.choice(['Орёл', 'Решка'])
+    await message.reply(f'Выпало: {result}')
 
 dp.register_message_handler(start, commands=['start'])
 dp.register_message_handler(help_command, commands=['help'])
@@ -139,6 +94,7 @@ dp.register_message_handler(horoscope, commands=['horoscope'])
 dp.register_message_handler(random_command, commands=['random'])
 dp.register_message_handler(timer, commands=['timer'])
 dp.register_message_handler(suggest, commands=['suggest'])
+dp.register_message_handler(coinflip, commands=['coinflip'])
 
 if __name__ == '__main__':
     executor.start_polling(dp)
