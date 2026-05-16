@@ -71,37 +71,37 @@ async def weather(message: types.Message):
                     await message.reply('Ошибка. Проверьте город или ключ от API.')
     except Exception as e:
         logger.error(f'Ошибка при получении погоды: {e}')
-        await message.reply('Ошибка при получении погоды.')
+        await message.reply('Произошла ошибка при получении погоды.')
 
 async def stats(message: types.Message):
-    await message.reply('Статистика бота: пока не реализована.')
+    await message.reply('Статистика бота: пока недоступна.')
 
 async def poll(message: types.Message):
-    await message.reply('Опрос: пока не реализован.')
+    await message.reply('Функция опроса пока не реализована.')
 
 async def remind(message: types.Message):
-    await message.reply('Напоминание: пока не реализовано.')
+    await message.reply('Напоминание: используйте /remindme <время> <текст>')
 
 async def info(message: types.Message):
-    await message.reply('Информация о боте: версия 1.0.')
+    await message.reply('Информация о боте: версия 1.0')
 
 async def whatsnew(message: types.Message):
-    await message.reply('Что нового: добавлены новые команды.')
+    await message.reply('Новое в версии: улучшена обработка ошибок.')
 
 async def remind_me(message: types.Message):
-    await message.reply('Напоминание установлено.')
+    await message.reply('Напоминание установлено (заглушка).')
 
 async def horoscope(message: types.Message):
-    await message.reply('Гороскоп: сегодня удачный день.')
+    await message.reply('Гороскоп: сегодня удачный день!')
 
 async def random_command(message: types.Message):
     await message.reply(f'Случайное число: {random.randint(1, 100)}')
 
 async def timer(message: types.Message):
-    await message.reply('Таймер запущен.')
+    await message.reply('Таймер запущен (заглушка).')
 
 async def suggest(message: types.Message):
-    await message.reply('Предложение: попробуйте что-то новое.')
+    await message.reply('Предложение: попробуйте что-то новое!')
 
 async def coinflip(message: types.Message):
     result = random.choice(['Орёл', 'Решка'])
