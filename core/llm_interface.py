@@ -77,39 +77,52 @@ class LLMInterface:
         """Очищает вывод LLM от markdown и пояснений."""
         cleaned = raw.strip()
 
-        # Убираем markdown-обёртку
-        if cleaned.startswith("```"):
-            lines = cleaned.split("\n")
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            cleaned = "\n".join(lines)
-
-        # Убираем ВСЕ строки, которые содержат ТОЛЬКО ```
-        lines = cleaned.split("\n")
-        lines = [l for l in lines if l.strip() != "```"]
-
-        # Убираем пояснительные строки перед кодом
-        clean_lines = []
-        code_started = False
-        for line in lines:
-            stripped = line.strip()
-            # Первая строка реального кода
-            if stripped.startswith(
-                    ("import ", "from ", "#!", "#!/", "async def ", "def ", "class ", "BOT_TOKEN", "logger")):
-                code_started = True
-
-            if code_started:
-                clean_lines.append(line)
-            elif not stripped or stripped.startswith(("Вот", "Here", "Конечно", "Sure", "Я", "Исправленный")):
-                # Пропускаем пояснения
+        # Циклично убираем markdown и пояснения, пока первая строка не станет кодом
+        for _ in range(5):  # максимум 5 попыток
+            # Убираем открывающие ```python или ```
+            if cleaned.startswith("```"):
+                lines = cleaned.split("\n")
+                lines = lines[1:]  # убираем первую строку с ```
+                if lines and lines[-1].strip() == "```":
+                    lines = lines[:-1]
+                cleaned = "\n".join(lines).strip()
                 continue
-            else:
-                # Возможно, это код без импорта — сохраняем
-                clean_lines.append(line)
-                code_started = True
 
-        if clean_lines:
-            return "\n".join(clean_lines)
+            # Убираем одиночные ``` в любой строке
+            lines = cleaned.split("\n")
+            lines = [l for l in lines if l.strip() != "```"]
+            cleaned = "\n".join(lines).strip()
+
+            # Проверяем первую непустую строку
+            first_line = ""
+            for line in cleaned.split("\n"):
+                if line.strip():
+                    first_line = line.strip()
+                    break
+
+            # Если первая строка — пояснение, убираем его
+            if first_line and not first_line.startswith(
+                    ("import ", "from ", "#!", "#!/", "async def ", "def ", "class ", "BOT_TOKEN", "logger")):
+                # Это пояснение — убираем первую строку
+                lines = cleaned.split("\n")
+                for i, line in enumerate(lines):
+                    if line.strip():
+                        # Проверяем, похоже ли на код
+                        if line.strip().startswith(
+                                ("import ", "from ", "#!", "#!/", "async def ", "def ", "class ", "BOT_TOKEN",
+                                 "logger")):
+                            cleaned = "\n".join(lines[i:])
+                            break
+                        elif not line.strip().startswith(
+                                ("Вот", "Here", "Конечно", "Sure", "Я", "Исправленный", "Ниже", "Below")):
+                            # Неизвестная строка — оставляем как есть
+                            break
+                        else:
+                            # Пояснение — пропускаем
+                            continue
+                break
+            else:
+                # Первая строка — код, выходим
+                break
+
         return cleaned
