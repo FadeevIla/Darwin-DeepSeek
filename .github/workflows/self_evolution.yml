@@ -9,6 +9,9 @@ on:
     - cron: '0 */6 * * *'  # каждые 6 часов
   workflow_dispatch:        # ручной запуск (кнопка в Actions)
 
+permissions:
+  contents: write
+
 jobs:
   evolve:
     runs-on: ubuntu-latest
@@ -29,7 +32,7 @@ jobs:
 
       - name: Запуск цикла эволюции
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           REPO_NAME: ${{ github.repository }}
           BOT_FILE_PATH: bot.py
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
