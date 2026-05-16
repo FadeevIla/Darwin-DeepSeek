@@ -13,6 +13,10 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 BOT_TOKEN = environ_map['TELEGRAM_BOT_TOKEN']
 
+bot = Bot(token=BOT_TOKEN)
+storage = MemoryStorage()
+dp = Dispatcher(bot, storage=storage)
+
 async def start(message: types.Message):
     await message.reply("Привет, я бот!")
 
@@ -70,11 +74,38 @@ async def weather(message: types.Message):
         await message.reply('Ошибка при получении погоды.')
 
 async def stats(message: types.Message):
-    commands 
-# ... середина пропущена ...
+    await message.reply('Статистика бота: пока не реализована.')
+
+async def poll(message: types.Message):
+    await message.reply('Опрос: пока не реализован.')
+
+async def remind(message: types.Message):
+    await message.reply('Напоминание: пока не реализовано.')
+
+async def info(message: types.Message):
+    await message.reply('Информация о боте: версия 1.0.')
+
+async def whatsnew(message: types.Message):
+    await message.reply('Что нового: добавлены новые команды.')
+
+async def remind_me(message: types.Message):
+    await message.reply('Напоминание установлено.')
+
+async def horoscope(message: types.Message):
+    await message.reply('Гороскоп: сегодня удачный день.')
+
+async def random_command(message: types.Message):
+    await message.reply(f'Случайное число: {random.randint(1, 100)}')
+
+async def timer(message: types.Message):
+    await message.reply('Таймер запущен.')
+
+async def suggest(message: types.Message):
+    await message.reply('Предложение: попробуйте что-то новое.')
+
 async def coinflip(message: types.Message):
     result = random.choice(['Орёл', 'Решка'])
-    await message.reply(f'Выпало: {result}')
+    await message.reply(f'Результат: {result}')
 
 dp.register_message_handler(start, commands=['start'])
 dp.register_message_handler(help_command, commands=['help'])
