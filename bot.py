@@ -70,44 +70,43 @@ async def weather(message: types.Message):
                 else:
                     await message.reply('Ошибка. Проверьте город или ключ от API.')
     except Exception as e:
-        logger.error(f'Ошибка получения погоды: {e}')
-        await message.reply('Произошла ошибка при получении погоды.')
+        logger.error(f'Ошиб')
 
 async def echo(message: types.Message):
     await message.reply(message.text)
 
 async def stats(message: types.Message):
-    await message.reply('Статистика бота: пока не реализована.')
+    await message.reply('Статистика пока недоступна.')
 
 async def poll(message: types.Message):
-    await message.reply('Функция опроса пока не реализована.')
+    await message.reply('Опрос пока недоступен.')
 
 async def remind(message: types.Message):
-    await message.reply('Функция напоминания пока не реализована.')
+    await message.reply('Напоминание пока недоступно.')
 
 async def info(message: types.Message):
-    await message.reply('Информация о боте: версия 1.0')
+    await message.reply('Информация пока недоступна.')
 
 async def whatsnew(message: types.Message):
-    await message.reply('Новое в версии 1.0: добавлены команды /weather, /joke, /fact, /quote')
+    await message.reply('Новости пока недоступны.')
 
 async def remind_me(message: types.Message):
-    await message.reply('Функция напоминания пока не реализована.')
+    await message.reply('Напоминание пока недоступно.')
 
 async def horoscope(message: types.Message):
-    await message.reply('Гороскоп пока не реализован.')
+    await message.reply('Гороскоп пока недоступен.')
 
 async def random_command(message: types.Message):
-    await message.reply(str(random.randint(1, 100)))
+    await message.reply('Случайное число: ' + str(random.randint(1, 100)))
 
 async def timer(message: types.Message):
-    await message.reply('Таймер пока не реализован.')
+    await message.reply('Таймер пока недоступен.')
 
 async def suggest(message: types.Message):
-    await message.reply('Предложение: попробуйте команду /joke')
+    await message.reply('Предложение пока недоступно.')
 
 async def coinflip(message: types.Message):
-    result = random.choice(['Орёл', 'Решка'])
+    result = 'Орёл' if random.choice([True, False]) else 'Решка'
     await message.reply(f'Результат: {result}')
 
 async def dice(message: types.Message):
@@ -115,13 +114,21 @@ async def dice(message: types.Message):
     await message.reply(f'Выпало: {result}')
 
 async def giveaway(message: types.Message):
-    await message.reply('Розыгрыш пока не проводится.')
+    await message.reply('Розыгрыш пока недоступен.')
 
 async def support(message: types.Message):
-    await message.reply('Поддержка: напишите @admin')
+    await message.reply('Поддержка пока недоступна.')
 
 async def ping(message: types.Message):
     await message.reply('Понг!')
+
+async def news(message: types.Message):
+    news_items = [
+        'Сегодня в мире: ученые открыли новый вид бабочек.',
+        'В Африке найдено древнее поселение.',
+        'Технологии: новый процессор увеличит производительность в 10 раз.'
+    ]
+    await message.reply(random.choice(news_items))
 
 dp.register_message_handler(start, commands=['start'])
 dp.register_message_handler(help_command, commands=['help'])
@@ -147,6 +154,7 @@ dp.register_message_handler(dice, commands=['dice'])
 dp.register_message_handler(giveaway, commands=['giveaway'])
 dp.register_message_handler(support, commands=['support'])
 dp.register_message_handler(ping, commands=['ping'])
+dp.register_message_handler(news, commands=['news'])
 
 if __name__ == '__main__':
     executor.start_polling(dp)
