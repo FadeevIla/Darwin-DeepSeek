@@ -1,6 +1,6 @@
 {
-  "description": "Добавил команду /echo — теперь я могу повторять за тобой слова!",
-  "commit": "b8191bbfd7f8f0b6bc67724c934e21b8b68a8f56",
-  "timestamp": "2026-05-16T18:05:53.090006+00:00",
-  "version": 2
+  "description": "Добавил новые команды /horoscope, /random, /timer, /suggest и /coinflip — теперь есть чем заняться!",
+  "commit": "ce327ab76222848bd9689ebfd223f7219b5aabd9",
+  "timestamp": "2026-05-16T19:05:24.049908+00:00",
+  "version": 1
 }
