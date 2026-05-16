@@ -24,10 +24,15 @@ class Validator:
             return False, f"Синтаксическая ошибка: {e.msg} (строка {e.lineno})"
 
     def validate_imports(self, code):
-        required = ["telegram", "Telegram", "Bot", "Application"]
-        has_bot_framework = any(kw in code for kw in required)
+        # Ищем любые признаки телеграм-бота
+        bot_indicators = [
+            "telegram", "Telegram", "Bot", "bot",
+            "aiogram", "Dispatcher", "executor",
+            "from aiogram", "import aiogram",
+        ]
+        has_bot_framework = any(indicator in code for indicator in bot_indicators)
         if not has_bot_framework:
-            return False, "Код не похож на телеграм-бота (нет импортов telegram)"
+            return False, "Код не похож на телеграм-бота"
 
         dangerous = ["os.system", "subprocess.call", "eval(", "exec("]
         for danger in dangerous:
