@@ -1,6 +1,6 @@
 {
-  "description": "Добавил команды /horoscope, /random, /suggest, /coinflip, /dice и /giveaway — теперь бот стал гораздо веселее!",
-  "commit": "f42a08eaa804a5d6e0c118eabbdafe95c22cac30",
-  "timestamp": "2026-05-16T21:06:49.637061+00:00",
-  "version": 5
+  "description": "Добавил команду /ping и обновил обработку ошибок в /weather — теперь всё работает чётче и веселее!",
+  "commit": "0f9cd75098b7e0c08f25880d6f401f854378bb2c",
+  "timestamp": "2026-05-16T21:07:10.012467+00:00",
+  "version": 6
 }
