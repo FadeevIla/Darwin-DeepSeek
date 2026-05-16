@@ -91,65 +91,31 @@ class Validator:
         return False, code, "Исчерпаны попытки"
 
     def _llm_fix(self, code, error, fix_type):
+        """Пытается исправить ошибку локально, без LLM."""
+        import re
         import time
 
-        prompts = {
-            "syntax": (
-                "Ты — Python-разработчик. Исправь ТОЛЬКО синтаксическую ошибку. "
-                "Верни полный код без markdown.",
-                0.1,
-            ),
-            "imports": (
-                "Исправь проблемы с импортами. Верни полный код без markdown.",
-                0.1,
-            ),
-        }
-        prompt, temp = prompts.get(fix_type, prompts["syntax"])
+        # Если ошибка синтаксиса — пробуем простые автозамены
+        if fix_type == "syntax":
+            # Убираем reply_text → reply
+            code = re.sub(r'\.reply_text\(', '.reply(', code)
+            # Убираем Update из импортов
+            code = re.sub(r'from aiogram\.types import.*Update,?\s*', '', code)
+            code = re.sub(r',\s*Update', '', code)
+            # Убираем Application
+            code = re.sub(r'from aiogram import.*Application,?\s*', '', code)
+            code = re.sub(r',\s*Application', '', code)
+            # Убираем skip_updates=True
+            code = re.sub(r'skip_updates\s*=\s*True', '', code)
+            # Исправляем executor.start_polling
+            code = re.sub(r'executor\.start_polling\(dp,\s*\)', 'executor.start_polling(dp)', code)
 
-        if len(code) > 4000:
-            code = code[:3000] + "\n# ... пропущено ...\n" + code[-1000:]
+            self.logger.info("Применены локальные автоисправления синтаксиса")
+            return code
 
-        # Автоповторы при ошибках
-        for attempt in range(3):
-            try:
-                time.sleep(30)
-                chat = self.llm_client.chat.completions.create(
-                    messages=[
-                        {"role": "system", "content": prompt},
-                        {"role": "user", "content": f"Ошибка: {error}\n\nКод:\n{code}"},
-                    ],
-                    model="google/gemini-2.0-flash-001:free",
-                    temperature=temp,
-                    max_tokens=3000,
-                )
-                return self._clean_output(chat.choices[0].message.content)
-            except Exception as e:
-                error_str = str(e)
-                if "429" in error_str or "rate" in error_str.lower():
-                    wait = (attempt + 1) * 20
-                    self.logger.warning(f"Рейт-лимит валидатора, жду {wait} сек")
-                    time.sleep(wait)
-                elif "404" in error_str:
-                    # Пробуем запасную модель
-                    self.logger.warning("Gemini недоступен для валидации, пробую Llama")
-                    try:
-                        chat = self.llm_client.chat.completions.create(
-                            messages=[
-                                {"role": "system", "content": prompt},
-                                {"role": "user", "content": f"Ошибка: {error}\n\nКод:\n{code}"},
-                            ],
-                            model="meta-llama/llama-3.3-70b-instruct:free",
-                            temperature=temp,
-                            max_tokens=3000,
-                        )
-                        return self._clean_output(chat.choices[0].message.content)
-                    except:
-                        time.sleep(30)
-                else:
-                    self.logger.warning(f"Ошибка LLM в валидаторе: {e}")
-                    time.sleep(30)
-
-        raise Exception("Не удалось исправить ошибку валидации")
+        # Для других ошибок — ждём и возвращаем исходный код
+        time.sleep(5)
+        return code
 
     @staticmethod
     def _clean_output(raw):
