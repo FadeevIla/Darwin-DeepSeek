@@ -86,19 +86,30 @@ class LLMInterface:
                 lines = lines[:-1]
             cleaned = "\n".join(lines)
 
-        # Убираем ВСЕ строки, которые содержат ТОЛЬКО ``` (могут быть в середине)
+        # Убираем ВСЕ строки, которые содержат ТОЛЬКО ```
         lines = cleaned.split("\n")
         lines = [l for l in lines if l.strip() != "```"]
-        cleaned = "\n".join(lines)
 
-        # Убираем пояснения перед кодом
-        lines = cleaned.split("\n")
-        for i, line in enumerate(lines):
+        # Убираем пояснительные строки перед кодом
+        clean_lines = []
+        code_started = False
+        for line in lines:
             stripped = line.strip()
-            if stripped.startswith(("import ", "from ", "#!", "#!/", "async def", "def ", "class ")):
-                return "\n".join(lines[i:])
-            if not stripped or stripped.startswith(("Вот", "Here", "Конечно", "Sure")):
-                continue
-            break
+            # Первая строка реального кода
+            if stripped.startswith(
+                    ("import ", "from ", "#!", "#!/", "async def ", "def ", "class ", "BOT_TOKEN", "logger")):
+                code_started = True
 
+            if code_started:
+                clean_lines.append(line)
+            elif not stripped or stripped.startswith(("Вот", "Here", "Конечно", "Sure", "Я", "Исправленный")):
+                # Пропускаем пояснения
+                continue
+            else:
+                # Возможно, это код без импорта — сохраняем
+                clean_lines.append(line)
+                code_started = True
+
+        if clean_lines:
+            return "\n".join(clean_lines)
         return cleaned
