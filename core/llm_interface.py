@@ -33,19 +33,44 @@ class LLMInterface:
         return self._call(code, system_prompt, temperature=1.0)
 
     def _call(self, code, system_prompt, temperature):
-        chat = self.client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Код:\n\n{code}"},
-            ],
-            models=[
-                "deepseek-chat",
-                "deepseek-reasoner",
-            ],
-            temperature=temperature,
-            max_tokens=4000,
-        )
-        return self._clean(chat.choices[0].message.content)
+        import time
+
+        max_code_len = 4000
+        if len(code) > max_code_len:
+            code = code[:3000] + "\n# ... середина пропущена ...\n" + code[-1000:]
+
+        models = ["deepseek-chat", "deepseek-reasoner"]
+        last_error = None
+
+        for model in models:
+            for attempt in range(2):
+                try:
+                    chat = self.client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": f"Код:\n\n{code}"},
+                        ],
+                        temperature=temperature,
+                        max_tokens=4000,
+                    )
+                    result = self._clean(chat.choices[0].message.content)
+                    tokens = chat.usage.total_tokens if hasattr(chat, "usage") else "?"
+                    self.logger.info(f"LLM ответ ({model}): {len(result)} символов, {tokens} токенов")
+                    return result
+                except Exception as e:
+                    last_error = e
+                    error_str = str(e)
+                    if "rate" in error_str.lower() or "429" in error_str:
+                        wait = 30
+                        self.logger.warning(f"Рейт-лимит {model}, жду {wait} сек")
+                        time.sleep(wait)
+                    else:
+                        self.logger.warning(f"Ошибка {model}: {error_str[:100]}")
+                        break  # не рейт-лимит — пробуем следующую модель
+
+        self.logger.error(f"Все модели недоступны. Ошибка: {last_error}")
+        raise last_error
 
     @staticmethod
     def _clean(raw):
