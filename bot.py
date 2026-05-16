@@ -17,7 +17,7 @@ async def start(message: types.Message):
     await message.reply("Привет, я бот!")
 
 async def help_command(message: types.Message):
-    await message.reply('Список команд: /start, /help, /about, /status, /joke, /fact, /quote, /weather, /stats, /poll, /remind, /info, /whatsnew, /horoscope, /random, /timer')
+    await message.reply('Список команд: /start, /help, /about, /status, /joke, /fact, /quote, /weather, /stats, /poll, /remind, /info, /whatsnew, /horoscope, /random, /timer, /suggest')
 
 async def about(message: types.Message):
     await message.reply('Это бот, который может ответить на различные вопросы.')
@@ -71,7 +71,7 @@ async def weather(message: types.Message):
 
 async def stats(message: types.Message):
     commands = [
-        'start', 'help', 'about', 'status', 'joke', 'fact', 'quote', 'weather', 'stats', 'poll', 'remind', 'info', 'whatsnew', 'horoscope', 'random', 'timer'
+        'start', 'help', 'about', 'status', 'joke', 'fact', 'quote', 'weather', 'stats', 'poll', 'remind', 'info', 'whatsnew', 'horoscope', 'random', 'timer', 'suggest'
     ]
     await message.reply(f'Список команд: {", ".join(commands)}')
 
@@ -106,6 +106,17 @@ async def timer(message: types.Message):
         logger.error(f'Ошибка при установке таймера: {e}')
         await message.reply('Ошибка при установке таймера')
 
+async def suggest(message: types.Message):
+    suggestions = [
+        'Попробуйте прочитать книгу "Мастер и Маргарита"',
+        'Сходите в кино на новый фильм',
+        'Посетите местный парк для прогулки',
+        'Приготовьте что-то новое на ужин',
+        'Начните учить новый язык программирования'
+    ]
+    suggestion = random.choice(suggestions)
+    await message.reply(f'Моя рекомендация: {suggestion}')
+
 bot = Bot(token=BOT_TOKEN, parse_mode=types.ParseMode.HTML)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
@@ -127,6 +138,7 @@ dp.register_message_handler(remind_me, commands=['remindme'])
 dp.register_message_handler(horoscope, commands=['horoscope'])
 dp.register_message_handler(random_command, commands=['random'])
 dp.register_message_handler(timer, commands=['timer'])
+dp.register_message_handler(suggest, commands=['suggest'])
 
 if __name__ == '__main__':
     executor.start_polling(dp)
