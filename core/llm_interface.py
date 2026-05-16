@@ -41,7 +41,7 @@ class LLMInterface:
             models=[
                 "deepseek-chat",
                 "deepseek-reasoner",
-            ]
+            ],
             temperature=temperature,
             max_tokens=4000,
         )
