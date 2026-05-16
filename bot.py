@@ -70,7 +70,7 @@ async def weather(message: types.Message):
                 else:
                     await message.reply('Ошибка. Проверьте город или ключ от API.')
     except Exception as e:
-        logger.error(f'Ошибка получения погоды: {e}')
+        logger.error(f'Ошибка при получении погоды: {e}')
         await message.reply('Произошла ошибка при получении погоды.')
 
 async def echo(message: types.Message):
@@ -80,42 +80,42 @@ async def stats(message: types.Message):
     await message.reply('Статистика бота: пока не реализована.')
 
 async def poll(message: types.Message):
-    await message.reply('Функция опроса пока не реализована.')
+    await message.reply('Опрос: пока не реализован.')
 
 async def remind(message: types.Message):
-    await message.reply('Функция напоминания пока не реализована.')
+    await message.reply('Напоминание: пока не реализовано.')
 
 async def info(message: types.Message):
-    await message.reply('Информация о боте: версия 1.0')
+    await message.reply('Информация о боте: версия 1.0.')
 
 async def whatsnew(message: types.Message):
-    await message.reply('Что нового: добавлены новые команды.')
+    await message.reply('Что нового: версия 1.0 - базовый функционал.')
 
 async def remind_me(message: types.Message):
-    await message.reply('Функция напоминания пока не реализована.')
+    await message.reply('Напомнить: пока не реализовано.')
 
 async def horoscope(message: types.Message):
-    await message.reply('Гороскоп пока не реализован.')
+    await message.reply('Гороскоп: пока не реализован.')
 
 async def random_command(message: types.Message):
-    await message.reply(str(random.randint(1, 100)))
+    await message.reply(f'Случайное число: {random.randint(1, 100)}')
 
 async def timer(message: types.Message):
-    await message.reply('Таймер пока не реализован.')
+    await message.reply('Таймер: пока не реализован.')
 
 async def suggest(message: types.Message):
-    await message.reply('Предложение: попробуйте команду /joke')
+    await message.reply('Предложение: пока не реализовано.')
 
 async def coinflip(message: types.Message):
-    result = random.choice(['Орёл', 'Решка'])
-    await message.reply(result)
+    result = random.choice(['Орел', 'Решка'])
+    await message.reply(f'Результат: {result}')
 
 async def dice(message: types.Message):
     result = random.randint(1, 6)
-    await message.reply(str(result))
+    await message.reply(f'Выпало: {result}')
 
 async def giveaway(message: types.Message):
-    await message.reply('Розыгрыш пока не проводится.')
+    await message.reply('Розыгрыш: пока не реализован.')
 
 async def support(message: types.Message):
     await message.reply('Поддержка: напишите @admin')
