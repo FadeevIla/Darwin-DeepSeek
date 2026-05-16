@@ -1,6 +1,6 @@
 {
-  "description": "Добавил случайное число, гороскоп и заглушки для новых команд — теперь бот стал ещё загадочнее и полезнее!",
-  "commit": "bd04dfe4c72bf3005336691c020855211c91c1a1",
-  "timestamp": "2026-05-16T20:07:05.663608+00:00",
+  "description": "Добавил команды /horoscope, /random, /suggest, /coinflip, /dice и /giveaway — теперь бот стал гораздо веселее!",
+  "commit": "f42a08eaa804a5d6e0c118eabbdafe95c22cac30",
+  "timestamp": "2026-05-16T21:06:49.637061+00:00",
   "version": 5
 }
