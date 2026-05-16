@@ -1,6 +1,6 @@
 {
-  "description": "Добавил новые команды /horoscope, /random, /timer, /suggest и /coinflip — теперь есть чем заняться!",
-  "commit": "ce327ab76222848bd9689ebfd223f7219b5aabd9",
-  "timestamp": "2026-05-16T19:05:24.049908+00:00",
-  "version": 1
+  "description": "Добавил команду /dice — теперь можно бросать кубик и узнавать результат!",
+  "commit": "3387394d198b6cd0599c2a4cdff4d23a8d9d456e",
+  "timestamp": "2026-05-16T19:05:44.759988+00:00",
+  "version": 2
 }
