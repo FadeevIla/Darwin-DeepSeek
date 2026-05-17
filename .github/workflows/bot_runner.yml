@@ -6,7 +6,7 @@ name: Run Darwin Bot
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '0 * * * *'  # каждый час в :00 минут
   workflow_dispatch:         # ручной запуск
   push:                      # ← НОВОЕ: запуск при пуше
     branches:
@@ -44,4 +44,4 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
-          timeout 270 python bot.py || true
+          timeout 3540 python bot.py || true
