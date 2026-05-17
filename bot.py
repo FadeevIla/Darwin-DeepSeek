@@ -101,7 +101,7 @@ async def timer(message: types.Message):
     await message.reply('Таймер запущен.')
 
 async def suggest(message: types.Message):
-    await message.reply('Предложение: попробуйте новое хобби.')
+    await message.reply('Предложение: попробуйте что-то новое.')
 
 async def coinflip(message: types.Message):
     result = random.choice(['Орел', 'Решка'])
@@ -112,7 +112,7 @@ async def dice(message: types.Message):
     await message.reply(f'Выпало: {result}')
 
 async def giveaway(message: types.Message):
-    await message.reply('Розыгрыш: пока не активен.')
+    await message.reply('Розыгрыш: пока недоступен.')
 
 async def support(message: types.Message):
     await message.reply('Поддержка: напишите @admin.')
@@ -121,10 +121,11 @@ async def ping(message: types.Message):
     await message.reply('Понг!')
 
 async def news(message: types.Message):
-    await message.reply('Новости: пока нет новых.')
+    await message.reply('Новости: пока недоступны.')
 
 async def echo(message: types.Message):
-    await message.reply(message.text.replace('/echo ', '', 1) if message.text.startswith('/echo ') else 'Используйте /echo <текст>')
+    text = message.text.replace('/echo ', '')
+    await message.reply(text)
 
 dp.register_message_handler(start, commands=['start'])
 dp.register_message_handler(help_command, commands=['help'])
