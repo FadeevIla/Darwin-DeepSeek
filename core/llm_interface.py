@@ -33,6 +33,10 @@ class LLMInterface:
             "- Не оборачивай код в ``` или ```python."
             f"\n\nПОЖЕЛАНИЯ ПОЛЬЗОВАТЕЛЕЙ (учти их при оптимизации):\n{feedback}\n\n"
             "После обработки пожеланий удали их через core.feedback.clear_feedback()."
+            "ОБЯЗАТЕЛЬНО добавь в код:\n"
+            "from core.health_server import start_health_server\n"
+            "В if __name__ == '__main__': перед запуском бота добавь start_health_server()\n"
+            "Это нужно для работы на Render. НЕ удаляй этот вызов.\n"
         )
         return self._call(code, system_prompt, temperature=0.2)
 
@@ -63,6 +67,10 @@ class LLMInterface:
             "ДОБАВЬ команду /report для приёма багов и пожеланий от админа.\n"
             "Команда должна сохранять сообщение через core.feedback.add_feedback().\n"
             "Только админ (chat_id=6909561387) может использовать эту команду.\n"
+            "ОБЯЗАТЕЛЬНО добавь в код:\n"
+            "from core.health_server import start_health_server\n"
+            "В if __name__ == '__main__': перед запуском бота добавь start_health_server()\n"
+            "Это нужно для работы на Render. НЕ удаляй этот вызов.\n"
         )
         return self._call(code, system_prompt, temperature=1.0)
 
