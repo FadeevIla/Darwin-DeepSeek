@@ -5,8 +5,8 @@
 name: Run Darwin Bot
 
 on:
-  schedule:
-    - cron: '0 * * * *'  # каждый час в :00 минут
+schedule:
+  - cron: '0 */3 * * *'  # каждые 3 часа
   workflow_dispatch:         # ручной запуск
   push:                      # ← НОВОЕ: запуск при пуше
     branches:
