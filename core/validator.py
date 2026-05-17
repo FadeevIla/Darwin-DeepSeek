@@ -127,7 +127,7 @@ class Validator:
             code = re.sub(r"commands\s*=\s*\[.*?\]\s*\)", "", code)
             code = re.sub(r'\){2,}', ')', code)
 
-            # Автопочинка строк
+            # Автопочинка строк и скобок
             lines = code.split('\n')
             fixed_lines = []
             for line in lines:
@@ -141,15 +141,34 @@ class Validator:
                 if line.strip().endswith(('reply("', 'reply(\'', 'answer("', 'answer(\'')):
                     line = line + '")'
 
-                # 🆕 Скобки [ ] и ( )
+                # Скобки
                 open_brackets = line.count('[') - line.count(']')
                 open_parens = line.count('(') - line.count(')')
+                open_braces = line.count('{') - line.count('}')
                 if open_brackets > 0:
                     line = line + ']' * open_brackets
                 if open_parens > 0:
                     line = line + ')' * open_parens
+                if open_braces > 0:
+                    line = line + '}' * open_braces
+
+                # 🆕 Обрыв строки commands=[' → закрываем
+                if re.search(r"commands\s*=\s*\['$", line.strip()):
+                    line = line + "'])" if "'" in line else line + '"])'
 
                 fixed_lines.append(line)
+            code = '\n'.join(fixed_lines)
+
+            # 🆕 Нормализация отступов: убираем лишние 4 пробела в начале
+            fixed_lines = []
+            for line in code.split('\n'):
+                stripped = line.lstrip()
+                if stripped:
+                    # Если строка начинается с кода, но имеет >4 отступов в середине файла
+                    # Оставляем как есть — это может быть вложенный код
+                    fixed_lines.append(line)
+                else:
+                    fixed_lines.append('')
             code = '\n'.join(fixed_lines)
 
             self.logger.info("Применены локальные автоисправления синтаксиса")
