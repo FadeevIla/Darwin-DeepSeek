@@ -5,14 +5,9 @@
 name: Run Darwin Bot
 
 on:
-schedule:
-  - cron: '0 */3 * * *'  # каждые 3 часа
-  workflow_dispatch:         # ручной запуск
-  push:                      # ← НОВОЕ: запуск при пуше
-    branches:
-      - main
-    paths:
-      - 'bot.py'             # только если изменился bot.py
+  schedule:
+    - cron: '0 */3 * * *'  # каждые 3 часа (запасной)
+  workflow_dispatch:         # ручной запуск для тестов
 
 permissions:
   contents: write
