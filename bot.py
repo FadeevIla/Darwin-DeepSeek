@@ -74,37 +74,37 @@ async def weather(message: types.Message):
         await message.reply('Произошла ошибка при получении погоды.')
 
 async def stats(message: types.Message):
-    await message.reply('Статистика бота: 0 пользователей, 0 сообщений.')
+    await message.reply('Статистика бота: пока недоступна.')
 
 async def poll(message: types.Message):
-    await message.reply('Опрос создан!')
+    await message.reply('Опрос: пока недоступен.')
 
 async def remind(message: types.Message):
-    await message.reply('Напоминание установлено!')
+    await message.reply('Напоминание: пока недоступно.')
 
 async def info(message: types.Message):
-    await message.reply('Информация о боте: версия 1.0')
+    await message.reply('Информация о боте: версия 1.0.')
 
 async def whatsnew(message: types.Message):
-    await message.reply('Новое: добавлены команды /horoscope, /random, /timer, /suggest, /coinflip, /dice, /remindme, /giveaway, /ping')
+    await message.reply('Что нового: добавлены новые команды.')
 
 async def remind_me(message: types.Message):
-    await message.reply('Напоминание установлено!')
+    await message.reply('Напоминание установлено.')
 
 async def horoscope(message: types.Message):
-    await message.reply('Гороскоп: сегодня удачный день!')
+    await message.reply('Гороскоп: сегодня удачный день.')
 
 async def random_command(message: types.Message):
     await message.reply(f'Случайное число: {random.randint(1, 100)}')
 
 async def timer(message: types.Message):
-    await message.reply('Таймер запущен!')
+    await message.reply('Таймер запущен.')
 
 async def suggest(message: types.Message):
-    await message.reply('Предложение: попробуйте что-то новое!')
+    await message.reply('Предложение: попробуйте новое хобби.')
 
 async def coinflip(message: types.Message):
-    result = random.choice(['Орёл', 'Решка'])
+    result = random.choice(['Орел', 'Решка'])
     await message.reply(f'Результат: {result}')
 
 async def dice(message: types.Message):
@@ -112,19 +112,19 @@ async def dice(message: types.Message):
     await message.reply(f'Выпало: {result}')
 
 async def giveaway(message: types.Message):
-    await message.reply('Розыгрыш начат!')
+    await message.reply('Розыгрыш: пока не активен.')
 
 async def support(message: types.Message):
-    await message.reply('Поддержка: напишите @admin')
+    await message.reply('Поддержка: напишите @admin.')
 
 async def ping(message: types.Message):
     await message.reply('Понг!')
 
 async def news(message: types.Message):
-    await message.reply('Новостей пока нет.')
+    await message.reply('Новости: пока нет новых.')
 
 async def echo(message: types.Message):
-    await message.reply(message.text.replace('/echo ', '', 1))
+    await message.reply(message.text.replace('/echo ', '', 1) if message.text.startswith('/echo ') else 'Используйте /echo <текст>')
 
 dp.register_message_handler(start, commands=['start'])
 dp.register_message_handler(help_command, commands=['help'])
