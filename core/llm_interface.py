@@ -13,9 +13,6 @@ class LLMInterface:
         )
         self.logger.info("DeepSeek готов")
 
-    git
-    log - -oneline - 10
-
     def generate_feature(self, code):
         self.logger.info("LLM: генерация фичи")
 
