@@ -1,5 +1,3 @@
-# bot.py — Текстовая RPG "Уроборос"
-"""Компактный бот — механики в core/rpg_*.py"""
 import os
 import sys
 import logging
@@ -12,7 +10,7 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.utils import executor
 
 from core.health_server import start_health_server
-from core.feedback import add_feedback
+from core.feedback import add_feedback, clear_feedback
 from core.rpg_player import get_player
 from core.rpg_combat import get_random_enemy, fight_result
 from core.rpg_shop import get_shop_list, buy_item
@@ -96,15 +94,59 @@ async def buy_cmd(message: types.Message):
 
 
 async def report_cmd(message: types.Message):
-    if message.from_user.id != 6909561387:
-        await message.reply("⛔ Только для администратора.")
+    """Команда для отправки отзыва/багрепорта"""
+    args = message.get_args().strip()
+    if not args:
+        await message.reply(
+            "📝 <b>Отправка отзыва</b>\n\n"
+            "Напиши /report [текст отзыва] — и мы его получим.\n"
+            "Спасибо за помощь в улучшении игры!",
+            parse_mode="HTML"
+        )
         return
-    text = message.get_args()
-    if not text:
-        await message.reply("📝 /report текст")
+    
+    user_id = message.from_user.id
+    username = message.from_user.username or "Неизвестный"
+    
+    # Сохраняем отзыв
+    add_feedback(user_id, username, args)
+    
+    # Случайный ответ
+    import random
+    responses = [
+        "✅ Спасибо за отзыв! Мы обязательно его рассмотрим.",
+        "👍 Отлично! Твой отзыв поможет сделать игру лучше.",
+        "📨 Получено! Команда разработки благодарит тебя.",
+        "🌟 Твой голос важен для нас! Спасибо за обратную связь."
+    ]
+    
+    await message.reply(
+        f"{random.choice(responses)}\n\n"
+        f"<i>Твой отзыв:</i> {args}",
+        parse_mode="HTML"
+    )
+    
+    logger.info(f"Отзыв от {username} (ID: {user_id}): {args}")
+
+
+async def feedback_cmd(message: types.Message):
+    """Команда для просмотра статистики отзывов (только для админа)"""
+    # Простая проверка — только для определённых пользователей
+    admin_ids = [123456789]  # Замени на реальные ID администраторов
+    
+    if message.from_user.id not in admin_ids:
+        await message.reply("❌ У тебя нет доступа к этой команде.")
         return
-    add_feedback(text, "admin")
-    await message.reply("✅ Отправлено!")
+    
+    from core.feedback import get_feedback_stats
+    stats = get_feedback_stats()
+    
+    await message.reply(
+        f"📊 <b>Статистика отзывов</b>\n\n"
+        f"Всего отзывов: {stats['total']}\n"
+        f"Последний отзыв: {stats['last_feedback'] or 'нет'}",
+        parse_mode="HTML"
+    )
 
 
 # ============================================================
@@ -130,6 +172,7 @@ if __name__ == "__main__":
     dp.register_message_handler(shop_cmd, commands=['shop'])
     dp.register_message_handler(buy_cmd, commands=['buy'])
     dp.register_message_handler(report_cmd, commands=['report'])
+    dp.register_message_handler(feedback_cmd, commands=['feedback'])
 
     logger.info("🐉 Уроборос запущен!")
     executor.start_polling(dp)
