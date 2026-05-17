@@ -1,6 +1,7 @@
-# core/llm_interface.py (DeepSeek версия)
+# core/llm_interface.py
 """Интерфейс для работы с DeepSeek API."""
 from openai import OpenAI
+
 
 class LLMInterface:
     def __init__(self, api_key, logger, notifier=None):
@@ -13,132 +14,87 @@ class LLMInterface:
         )
         self.logger.info("DeepSeek готов")
 
-    def generate_feature(self, code):
-        self.logger.info("LLM: генерация фичи")
-
-        from datetime import datetime
-        weekday = datetime.now().weekday()  # 0=Пн, 6=Вс
-
-        if weekday == 6:  # Воскресенье
-            system_prompt = (
-                "Ты — разработчик текстовой RPG 'Уроборос' на aiogram 2.25.1.\n"
-                "Сегодня ВОСКРЕСЕНЬЕ — день рефакторинга.\n\n"
-                "ТВОЯ ЗАДАЧА:\n"
-                "1. Исправь ВСЕ баги и синтаксические ошибки\n"
-                "2. Удали дублирующийся или мёртвый код\n"
-                "3. Оптимизируй: объедини похожие функции, упрости логику\n"
-                "4. НЕ добавляй новые механики и команды\n\n"
-                "КРИТИЧЕСКИ ВАЖНО:\n"
-                "- Верни АБСОЛЮТНО ВЕСЬ код полностью\n"
-                "- НЕ сокращай код словами '...'\n"
-                "- from core.health_server import start_health_server\n"
-                "- start_health_server() в main\n"
-                "- Первая строка — import. Без пояснений."
-            )
-        elif weekday in (0, 2, 4):  # Пн, Ср, Пт
-            system_prompt = (
-                "Ты — разработчик текстовой RPG 'Уроборос' на aiogram 2.25.1.\n"
-                "Сегодня РАБОЧИЙ ДЕНЬ — улучшаем существующее.\n\n"
-                "ТВОЯ ЗАДАЧА:\n"
-                "Выбери ОДНУ существующую механику и СУЩЕСТВЕННО УЛУЧШИ её (минимум 30 строк):\n"
-                "- Бой: критические удары, блоки, способности\n"
-                "- Инвентарь: категории, экипировка, использование предметов\n"
-                "- Квесты: цепочки, разные концовки\n"
-                "- Кольцо: дилеммы, растущее проклятие\n"
-                "- NPC: диалоги с выбором\n"
-                "- Магазин: случайный ассортимент\n\n"
-                "НЕ добавляй новые команды — только улучшай существующие.\n\n"
-                "КРИТИЧЕСКИ ВАЖНО:\n"
-                "- Верни АБСОЛЮТНО ВЕСЬ код полностью\n"
-                "- НЕ сокращай код словами '...'\n"
-                "- from core.health_server import start_health_server\n"
-                "- start_health_server() в main\n"
-                "- Первая строка — import. Без пояснений."
-            )
-        else:  # Вт, Чт, Сб
-            system_prompt = (
-                "АРХИТЕКТУРА ПРОЕКТА:\n"
-                "- bot.py — только регистрация команд (НЕ добавляй туда логику)\n"
-                "- core/rpg_player.py — управление игроком\n"
-                "- core/rpg_combat.py — боевая система\n"
-                "- core/rpg_shop.py — магазин\n"
-                "- core/rpg_inventory.py — инвентарь\n"
-                "- core/rpg_events.py — отдых и случайные события\n"
-                "- core/rpg_help.py — тексты справки\n\n"
-                "ПРАВИЛА:\n"
-                "- ВСЯ новая логика — в соответствующем модуле core/rpg_*.py\n"
-                "- В bot.py только импорт и register_message_handler\n"
-                "- Если улучшаешь механику — меняй ТОЛЬКО её модуль\n"
-                "- НЕ трогай другие модули без необходимости\n"
-                "- Верни ТОЛЬКО изменённый модуль ЦЕЛИКОМ\n"
-                "- Первая строка — import. Без пояснений.\n"
-                "Ты — разработчик текстовой RPG 'Уроборос' на aiogram 2.25.1.\n"
-                "Сегодня ДЕНЬ ИННОВАЦИЙ — можно добавить одну новую механику.\n\n"
-                "ТВОЯ ЗАДАЧА:\n"
-                "Добавь ОДНУ новую механику в RPG (минимум 40 строк):\n"
-                "- Система крафта предметов\n"
-                "- Спутник/пет с характером\n"
-                "- Случайные события при путешествии\n"
-                "- Система репутации (влияет на концовку)\n"
-                "- Подземелье с несколькими комнатами\n"
-                "- Дневник кольца (открывает лор)\n\n"
-                "НОВАЯ механика должна быть ПОЛНОСТЬЮ реализована, не заглушка.\n"
-                "Остальные механики НЕ трогай.\n\n"
-                "КРИТИЧЕСКИ ВАЖНО:\n"
-                "- Верни АБСОЛЮТНО ВЕСЬ код полностью\n"
-                "- НЕ сокращай код словами '...'\n"
-                "- from core.health_server import start_health_server\n"
-                "- start_health_server() в main\n"
-                "- Первая строка — import. Без пояснений."
-            )
-
-        return self._call(code, system_prompt, temperature=1.0)
-
     def analyze_bugs(self, code):
         self.logger.info("LLM: поиск багов")
         from core.feedback import get_feedback_summary, clear_feedback
         feedback = get_feedback_summary()
 
         system_prompt = (
-            "АРХИТЕКТУРА ПРОЕКТА:\n"
-            "- bot.py — только регистрация команд (НЕ добавляй туда логику)\n"
-            "- core/rpg_player.py — управление игроком\n"
+            "Ты — senior Python-разработчик. Исправь баги в коде RPG 'Уроборос'.\n\n"
+            "АРХИТЕКТУРА:\n"
+            "- bot.py — только регистрация команд\n"
+            "- core/rpg_player.py — игрок (характеристики, уровень)\n"
             "- core/rpg_combat.py — боевая система\n"
             "- core/rpg_shop.py — магазин\n"
             "- core/rpg_inventory.py — инвентарь\n"
-            "- core/rpg_events.py — отдых и случайные события\n"
+            "- core/rpg_events.py — отдых и события\n"
             "- core/rpg_help.py — тексты справки\n\n"
-            "ПРАВИЛА:\n"
-            "- ВСЯ новая логика — в соответствующем модуле core/rpg_*.py\n"
-            "- В bot.py только импорт и register_message_handler\n"
-            "- Если улучшаешь механику — меняй ТОЛЬКО её модуль\n"
-            "- НЕ трогай другие модули без необходимости\n"
-            "- Верни ТОЛЬКО изменённый модуль ЦЕЛИКОМ\n"
-            "- Первая строка — import. Без пояснений.\n"
-            "Ты — senior Python-разработчик. Исправь баги и улучши качество кода "
-            "текстовой RPG 'Уроборос' на aiogram 2.25.1.\n\n"
             "ЧТО ДЕЛАТЬ:\n"
-            "1. Исправь ВСЕ синтаксические и логические ошибки\n"
-            "2. УЛУЧШИ существующие механики:\n"
-            "   — Добавь больше случайности (random.choice, random.randint)\n"
-            "   — Добавь больше ветвлений (if/else с разными исходами)\n"
-            "   — Добавь больше текста (описания, диалоги, атмосферу)\n"
-            "3. Удали команды-заглушки (одна строка reply)\n"
-            "4. НЕ ломай существующие механики\n"
-            "5. НЕ используй reply_text — только reply или answer\n"
-            f"6. ПОЖЕЛАНИЯ ПОЛЬЗОВАТЕЛЕЙ (учти их):\n{feedback}\n"
-            "7. После обработки пожеланий удали их через core.feedback.clear_feedback()\n\n"
+            "1. Найди ВСЕ баги и синтаксические ошибки в КОНКРЕТНОМ модуле\n"
+            "2. Верни ИСПРАВЛЕННЫЙ модуль ЦЕЛИКОМ\n"
+            "3. УЛУЧШИ механику: больше случайности, больше ветвлений, больше текста\n"
+            "4. Если команда-заглушка — сделай полноценную\n"
+            f"5. ПОЖЕЛАНИЯ: {feedback}\n"
+            "6. После обработки: core.feedback.clear_feedback()\n\n"
             "КРИТИЧЕСКИ ВАЖНО:\n"
-            "- Верни АБСОЛЮТНО ВЕСЬ код полностью, от первой строки import до последней.\n"
-            "- НЕ сокращай код словами '... здесь остальной код ...' или '# остальное без изменений'.\n"
-            "- НЕ удаляй существующие функции и команды.\n"
-            "- Размер ответа должен быть НЕ МЕНЬШЕ размера исходного кода.\n"
-            "- ОБЯЗАТЕЛЬНО: from core.health_server import start_health_server\n"
-            "- ОБЯЗАТЕЛЬНО: в if __name__ == '__main__': вызови start_health_server()\n"
-            "- НЕ оборачивай код в ``` или ```python.\n"
-            "- Первая строка ответа — import. Без пояснений."
+            "- Верни ТОЛЬКО изменённый файл ЦЕЛИКОМ\n"
+            "- Если меняешь bot.py — верни ЕГО целиком\n"
+            "- Если меняешь модуль — верни МОДУЛЬ целиком\n"
+            "- НЕ оборачивай в ```. Первая строка — import.\n"
+            "- НЕ сокращай код."
         )
         return self._call(code, system_prompt, temperature=0.2)
+
+    def generate_feature(self, code):
+        self.logger.info("LLM: генерация фичи")
+        from datetime import datetime
+        weekday = datetime.now().weekday()
+
+        base_prompt = (
+            "Ты — разработчик RPG 'Уроборос' на aiogram 2.25.1.\n\n"
+            "АРХИТЕКТУРА:\n"
+            "- bot.py — только регистрация команд (НЕ добавляй логику в bot.py!)\n"
+            "- core/rpg_player.py — игрок\n"
+            "- core/rpg_combat.py — бой\n"
+            "- core/rpg_shop.py — магазин\n"
+            "- core/rpg_inventory.py — инвентарь\n"
+            "- core/rpg_events.py — события\n"
+            "- core/rpg_help.py — справка\n\n"
+            "ПРАВИЛА:\n"
+            "- НОВАЯ механика → новый файл core/rpg_NAME.py + обнови bot.py\n"
+            "- УЛУЧШЕНИЕ → меняй ТОЛЬКО один существующий модуль\n"
+            "- ВСЕГДА возвращай изменённый файл ЦЕЛИКОМ\n"
+            "- НЕ оборачивай в ```. Первая строка — import.\n"
+            "- НЕ сокращай код.\n"
+            "- НЕ трогай другие модули без необходимости.\n"
+            "- from core.health_server import start_health_server ВСЕГДА в bot.py\n"
+            "- start_health_server() ВСЕГДА в main bot.py\n\n"
+        )
+
+        if weekday == 6:
+            system_prompt = base_prompt + (
+                "ВОСКРЕСЕНЬЕ — рефакторинг.\n"
+                "Найди и исправь ВСЕ баги. Удали мёртвый код. Оптимизируй.\n"
+                "Верни ИСПРАВЛЕННЫЙ файл (модуль или bot.py) ЦЕЛИКОМ.\n"
+                "НЕ добавляй новые механики."
+            )
+        elif weekday in (0, 2, 4):
+            system_prompt = base_prompt + (
+                "ПОНЕДЕЛЬНИК/СРЕДА/ПЯТНИЦА — улучшение.\n"
+                "Выбери ОДИН модуль и СУЩЕСТВЕННО улучши его (минимум 30 строк).\n"
+                "Верни изменённый модуль ЦЕЛИКОМ.\n"
+                "НЕ создавай новые файлы. НЕ меняй bot.py без необходимости."
+            )
+        else:
+            system_prompt = base_prompt + (
+                "ВТОРНИК/ЧЕТВЕРГ/СУББОТА — инновация.\n"
+                "Создай ОДИН новый модуль core/rpg_NAME.py с НОВОЙ механикой (минимум 40 строк).\n"
+                "Обнови bot.py: добавь импорт и register_message_handler.\n"
+                "Верни: (1) НОВЫЙ модуль ЦЕЛИКОМ, (2) ОБНОВЛЁННЫЙ bot.py ЦЕЛИКОМ.\n"
+                "Раздели ответ меткой ###BOT_PY### между модулем и bot.py."
+            )
+
+        return self._call(code, system_prompt, temperature=1.0)
 
     def _call(self, code, system_prompt, temperature):
         import time
@@ -157,7 +113,7 @@ class LLMInterface:
                         model=model,
                         messages=[
                             {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": f"Код:\n\n{code}"},
+                            {"role": "user", "content": f"Файл для изменения:\n\n{code}"},
                         ],
                         temperature=temperature,
                         max_tokens=4000,
@@ -168,32 +124,24 @@ class LLMInterface:
                     return result
                 except Exception as e:
                     last_error = e
-                    error_str = str(e)
-                    if "rate" in error_str.lower() or "429" in error_str:
-                        wait = 30
-                        self.logger.warning(f"Рейт-лимит {model}, жду {wait} сек")
-                        time.sleep(wait)
+                    if "rate" in str(e).lower():
+                        time.sleep(30)
                     else:
-                        self.logger.warning(f"Ошибка {model}: {error_str[:100]}")
-                        break  # не рейт-лимит — пробуем следующую модель
+                        break
 
-        self.logger.error(f"Все модели недоступны. Ошибка: {last_error}")
         raise last_error
 
     @staticmethod
     def _clean(raw):
-        """Минимальная очистка вывода LLM."""
         cleaned = raw.strip()
-
-        # На всякий случай убираем ```
         if cleaned.startswith("```"):
             lines = cleaned.split("\n")
             lines = lines[1:]
             if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]
             cleaned = "\n".join(lines)
-
-        # Убираем строки, состоящие только из ```
         lines = [l for l in cleaned.split("\n") if l.strip() != "```"]
-
+        for i, line in enumerate(lines):
+            if line.strip().startswith(("import ", "from ", "#!", "async def ", "def ", "class ")):
+                return "\n".join(lines[i:])
         return "\n".join(lines)
