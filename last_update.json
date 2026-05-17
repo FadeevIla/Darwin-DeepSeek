@@ -1,6 +1,6 @@
 {
-  "description": "Добавил команду /echo — теперь я могу повторять за тобой!",
-  "commit": "c32b42d0a306992c0e569f6a25e6bf9afd512bba",
-  "timestamp": "2026-05-17T03:28:01.449776+00:00",
-  "version": 1
+  "description": "Добавил команды /joke, /fact, /quote — теперь бот стал веселее и умнее!",
+  "commit": "5866f05afaecf6e0f4c769087fc459540bde1451",
+  "timestamp": "2026-05-17T04:29:32.488920+00:00",
+  "version": 2
 }
