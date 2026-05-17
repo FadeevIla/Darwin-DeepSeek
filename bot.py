@@ -96,167 +96,86 @@ async def feedback_cmd(message: types.Message):
     """Команда для отправки отзыва"""
     from core.feedback import add_feedback
     
-    args = message.get_args().strip()
-    if not args:
-        await message.reply(
-            "📝 <b>Отзыв</b>\n\n"
-            "Напиши /feedback [твой отзыв] чтобы оставить отзыв.\n"
-            "Например: /feedback Отличная игра!",
-            parse_mode="HTML"
-        )
+    text = message.get_args().strip()
+    if not text:
+        await message.reply("✏️ Напиши отзыв после команды, например:\n/feedback Отличная игра!")
         return
     
-    success, msg = add_feedback(message.from_user.id, args)
-    await message.reply(msg, parse_mode="HTML")
+    success, msg = add_feedback(message.from_user.id, text)
+    await message.reply(msg)
 
 
 async def clear_feedback_cmd(message: types.Message):
-    """Команда для очистки отзывов"""
-    from core.feedback import clear_feedback
+    """Команда для очистки отзывов игрока"""
+    from core.feedback import clear_player_feedback
     
-    success, msg = clear_feedback()
-    await message.reply(msg, parse_mode="HTML")
+    success, msg = clear_player_feedback(message.from_user.id)
+    await message.reply(msg)
 
 
 async def attack_cmd(message: types.Message):
-    """Команда для атаки врага в бою"""
-    p = get_player(players, message.from_user.id)
+    """Команда атаки в бою"""
+    from core.rpg_combat import attack_enemy
     
-    if "enemy" not in p or p["enemy"] is None:
-        await message.reply(
-            "⚔️ <b>Нет врага!</b>\n\n"
-            "Сначала найди врага командой /fight",
-            parse_mode="HTML"
-        )
+    p = get_player(players, message.from_user.id)
+    if "enemy" not in p:
+        await message.reply("⚔️ Сначала начни бой: /fight", parse_mode="HTML")
         return
     
     enemy = p["enemy"]
-    result = fight_result(p, enemy)
+    result = attack_enemy(p, enemy)
     
-    if result["win"]:
-        # Враг побеждён
-        del p["enemy"]
-        await message.reply(
-            f"🎉 <b>Победа!</b>\n\n{result['message']}",
-            parse_mode="HTML"
-        )
+    # Обновляем состояние врага
+    if result.get("enemy"):
+        p["enemy"] = result["enemy"]
     else:
-        # Бой продолжается
-        if p["hp"] <= 0:
-            # Игрок умер
-            del p["enemy"]
-            await message.reply(
-                f"💀 <b>Ты погиб!</b>\n\n{result['message']}",
-                parse_mode="HTML"
-            )
-        else:
-            # Обновляем врага
-            p["enemy"] = result["enemy"]
-            await message.reply(
-                f"⚔️ <b>Бой продолжается!</b>\n\n{result['message']}",
-                parse_mode="HTML"
-            )
+        p.pop("enemy", None)
+    
+    await message.reply(result["message"], parse_mode="HTML")
 
 
 async def heal_cmd(message: types.Message):
-    """Команда для лечения"""
+    """Команда лечения в бою"""
+    from core.rpg_combat import heal_in_combat
+    
     p = get_player(players, message.from_user.id)
-    
-    # Проверяем, есть ли зелья
-    if "potions" not in p:
-        p["potions"] = 0
-    
-    if p["potions"] <= 0:
-        await message.reply(
-            "🧪 <b>Нет зелий!</b>\n\n"
-            "Купи зелья в магазине /shop",
-            parse_mode="HTML"
-        )
+    if "enemy" not in p:
+        await message.reply("🛌 Сейчас ты не в бою. Используй /rest для отдыха.", parse_mode="HTML")
         return
     
-    # Лечимся
-    heal_amount = 30 + p["level"] * 5
-    old_hp = p["hp"]
-    p["hp"] = min(p["max_hp"], p["hp"] + heal_amount)
-    p["potions"] -= 1
+    enemy = p["enemy"]
+    # Союзники не атакуют, просто лечимся
+    result = heal_in_combat(p, enemy)
     
-    actual_heal = p["hp"] - old_hp
+    if result.get("enemy"):
+        p["enemy"] = result["enemy"]
+    else:
+        p.pop("enemy", None)
     
-    await message.reply(
-        f"🧪 <b>Использовано зелье!</b>\n\n"
-        f"❤️ Восстановлено HP: +{actual_heal}\n"
-        f"❤️ Текущее HP: {p['hp']}/{p['max_hp']}\n"
-        f"🧪 Осталось зелий: {p['potions']}",
-        parse_mode="HTML"
-    )
+    await message.reply(result["message"], parse_mode="HTML")
 
 
 async def explore_cmd(message: types.Message):
-    """Команда для исследования"""
-    import random
+    """Команда исследования локации"""
+    from core.rpg_events import explore_location
     
     p = get_player(players, message.from_user.id)
     
-    # Случайное событие
-    events = [
-        {
-            "name": "Находка",
-            "message": "Ты нашёл старый сундук!",
-            "effect": lambda p: p.update({"coins": p["coins"] + random.randint(5, 20)}),
-            "result": lambda: f"🪙 +{random.randint(5, 20)} монет"
-        },
-        {
-            "name": "Ловушка",
-            "message": "Ты попал в ловушку!",
-            "effect": lambda p: p.update({"hp": max(0, p["hp"] - random.randint(5, 15))}),
-            "result": lambda: f"💔 -{random.randint(5, 15)} HP"
-        },
-        {
-            "name": "Зелье",
-            "message": "Ты нашёл зелье здоровья!",
-            "effect": lambda p: p.update({"potions": p.get("potions", 0) + 1}),
-            "result": lambda: "🧪 +1 зелье"
-        },
-        {
-            "name": "Опыт",
-            "message": "Ты нашёл древний свиток знаний!",
-            "effect": lambda p: p.update({"xp": p["xp"] + random.randint(10, 30)}),
-            "result": lambda: f"⭐ +{random.randint(10, 30)} XP"
-        },
-        {
-            "name": "Проклятие",
-            "message": "Ты коснулся проклятого артефакта!",
-            "effect": lambda p: p.update({"curse": min(100, p["curse"] + random.randint(5, 15))}),
-            "result": lambda: f"🌀 +{random.randint(5, 15)} проклятия"
-        },
-        {
-            "name": "Удача",
-            "message": "Ты нашёл мешочек с монетами!",
-            "effect": lambda p: p.update({"coins": p["coins"] + random.randint(10, 30)}),
-            "result": lambda: f"🪙 +{random.randint(10, 30)} монет"
-        }
-    ]
+    # Проверяем можно ли исследовать
+    if p["hp"] <= 0:
+        await message.reply("💀 Ты слишком слаб для исследований! Используй /rest.", parse_mode="HTML")
+        return
     
-    event = random.choice(events)
-    event["effect"](p)
-    
-    await message.reply(
-        f"🔍 <b>Исследование</b>\n\n"
-        f"{event['message']}\n"
-        f"{event['result']()}\n\n"
-        f"❤️ HP: {p['hp']}/{p['max_hp']}\n"
-        f"🪙 Монеты: {p['coins']}\n"
-        f"⭐ XP: {p['xp']}",
-        parse_mode="HTML"
-    )
+    result = explore_location(p)
+    await message.reply(result, parse_mode="HTML")
 
 
 if __name__ == "__main__":
-    if not BOT_TOKEN:
-        logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
-        sys.exit(1)
-
     start_health_server()
+    
+    if not BOT_TOKEN:
+        logger.error("❌ TELEGRAM_BOT_TOKEN не найден!")
+        sys.exit(1)
 
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(bot, storage=MemoryStorage())
