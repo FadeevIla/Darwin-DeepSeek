@@ -95,237 +95,149 @@ class RPGCharacter:
 
     def random_event(self):
         events = [
-            {"text": "Ты встретил старого мудреца на перекрестке. Он дарует тебе мудрость!", "effect": lambda: self.strength + 1},
-            {"text": "Грабители напали на тебя! Ты потерял немного монет.", "effect": lambda: setattr(self, 'coins', max(0, self.coins - random.randint(1, 5)))},
-            {"text": "Ты нашёл старый сундук с сокровищами!", "effect": lambda: setattr(self, 'coins', self.coins + random.randint(5, 15))},
-            {"text": "Загадочная фигура предлагает тебе зелье здоровья в обмен на монеты.", "effect": lambda: self.buy_item("зелье здоровья", 5) or setattr(self, 'coins', self.coins)},
-            {"text": "Проклятие кольца усиливается! Ты чувствуешь боль.", "effect": lambda: setattr(self, 'curse', min(10, self.curse + 1))},
-            {"text": "Ты наткнулся на банду разбойников! Придётся сражаться.", "effect": lambda: None},
+            {"text": "Ты встретил старого мудреца на дороге. Он дал тебе 5 монет.", "coins": 5, "hp": 0, "curse": 0},
+            {"text": "Ты нашёл сундук с сокровищами! +10 монет.", "coins": 10, "hp": 0, "curse": 0},
+            {"text": "Ты провалился в яму! -10 HP.", "coins": 0, "hp": -10, "curse": 0},
+            {"text": "Ты почувствовал, как кольцо сжалось на пальце. Проклятие усилилось!", "coins": 0, "hp": 0, "curse": 1},
+            {"text": "Ты нашёл зелье здоровья.", "coins": 0, "hp": 0, "curse": 0, "item": "зелье здоровья"},
+            {"text": "Ты встретил торговца, который продал тебе эликсир силы за 5 монет.", "coins": -5, "hp": 0, "curse": 0, "item": "эликсир силы", "cost": 5},
         ]
-        return random.choice(events)
+        event = random.choice(events)
+        log = event["text"] + "\n"
+        if event.get("coins", 0) != 0:
+            self.coins += event["coins"]
+            log += f"💰 Монет: {self.coins}\n"
+        if event.get("hp", 0) != 0:
+            self.hp += event["hp"]
+            log += f"❤️ HP: {self.hp}/{self.max_hp}\n"
+        if event.get("curse", 0) != 0:
+            self.curse = min(10, self.curse + 1)
+            log += f"☠️ Проклятие: {self.curse}/10\n"
+        if event.get("item"):
+            if event.get("cost", 0) <= self.coins:
+                self.coins -= event["cost"]
+                self.inventory.append(event["item"])
+                log += f"📦 Получен предмет: {event['item']}\n"
+            else:
+                log += "🤷 Недостаточно монет для покупки.\n"
+        return log
 
     def get_status(self):
-        return (f"⚔️ Статус персонажа:\n"
-                f"💪 Сила: {self.strength}\n"
-                f"🏃 Ловкость: {self.agility}\n"
-                f"🔮 Магия: {self.magic}\n"
-                f"❤️ HP: {self.hp}/{self.max_hp}\n"
-                f"🪙 Монеты: {self.coins}\n"
-                f"📦 Инвентарь: {', '.join(self.inventory) if self.inventory else 'пусто'}\n"
-                f"📊 Уровень: {self.level}\n"
-                f"✨ Опыт: {self.exp}/{self.exp_to_next}\n"
-                f"☠️ Проклятие: {self.curse}/10\n"
-                f"📍 Локация: {self.location}")
+        return f"Уровень: {self.level}\n❤️ HP: {self.hp}/{self.max_hp}\n💪 Сила: {self.strength}\n🏃 Ловкость: {self.agility}\n🔮 Магия: {self.magic}\n☠️ Проклятие: {self.curse}/10\n💰 Монет: {self.coins}\n📦 Инвентарь: {', '.join(self.inventory) if self.inventory else 'пусто'}"
 
-characters = {}
+players = {}
 
-async def start(message: types.Message):
+@dp.message_handler(commands=['start'])
+async def start_game(message: types.Message):
     user_id = message.from_user.id
-    if user_id not in characters:
-        characters[user_id] = RPGCharacter(user_id)
-        await message.reply("Добро пожаловать в Уроборос! Твой персонаж создан.\n"
-                           "Используй /help для списка команд.")
-    else:
-        await message.reply("Ты уже в игре! Используй /help для команд.")
+    if user_id not in players:
+        players[user_id] = RPGCharacter(user_id)
+    char = players[user_id]
+    
+    await message.reply(f"Добро пожаловать в Уроборос, {message.from_user.first_name}!\n"
+                         f"Ты — искатель приключений, нашедший древнее кольцо.\n"
+                         f"Оно даёт силу, но пожирает владельца.\n\n"
+                         f"{char.get_status()}\n\n"
+                         f"Команды:\n"
+                         f"/status — текущее состояние\n"
+                         f"/explore — отправиться в приключение\n"
+                         f"/battle — найти врага и сразиться\n"
+                         f"/inventory — посмотреть инвентарь\n"
+                         f"/shop — магазин предметов\n"
+                         f"/heal — использовать зелье здоровья")
 
-async def help_command(message: types.Message):
+@dp.message_handler(commands=['status'])
+async def show_status(message: types.Message):
     user_id = message.from_user.id
-    if user_id not in characters:
+    if user_id not in players:
         await message.reply("Сначала начни игру через /start")
         return
-    char = characters[user_id]
-    await message.reply(f"Доступные команды:\n"
-                       f"/status — твой статус\n"
-                       f"/battle — сразиться с врагом\n"
-                       f"/shop — магазин\n"
-                       f"/use <предмет> — использовать предмет\n"
-                       f"/travel — отправиться в путь (может случиться событие)\n"
-                       f"/curse — информация о проклятии\n"
-                       f"/help — эта справка")
-
-async def status_command(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in characters:
-        await message.reply("Сначала начни игру через /start")
-        return
-    char = characters[user_id]
+    char = players[user_id]
     await message.reply(char.get_status())
 
-async def shop_command(message: types.Message):
+@dp.message_handler(commands=['explore'])
+async def explore(message: types.Message):
     user_id = message.from_user.id
-    if user_id not in characters:
+    if user_id not in players:
         await message.reply("Сначала начни игру через /start")
         return
-    char = characters[user_id]
-    if char.location != "таверна":
-        await message.reply("Ты не в таверне! Вернись через /travel или используй /status чтобы узнать локацию.")
+    char = players[user_id]
+    
+    event_log = char.random_event()
+    if char.hp <= 0:
+        await message.reply("☠️ Ты погиб от ран во время путешествия. Игра окончена.")
+        del players[user_id]
         return
-    items = [
-        {"name": "зелье здоровья", "price": 10, "desc": "Восстанавливает 30 HP"},
-        {"name": "эликсир силы", "price": 20, "desc": "Сила +2"},
-        {"name": "зелье магии", "price": 20, "desc": "Магия +2"},
-    ]
-    response = "🏪 Таверна — Магазин:\n\n"
-    for idx, item in enumerate(items, 1):
-        response += f"{idx}. {item['name'].capitalize()} — {item['price']} монет — {item['desc']}\n"
-    response += f"\nУ тебя {char.coins} монет.\nИспользуй /buy <номер> для покупки."
+    
+    curse_damage = char.curse_effect()
+    if curse_damage > 0:
+        event_log += f"\n☠️ Кольцо пожирает тебя: -{curse_damage} HP"
+    if char.hp <= 0:
+        await message.reply("☠️ Кольцо высосало из тебя последние силы. Ты мёртв.")
+        del players[user_id]
+        return
+    
+    await message.reply(event_log)
 
-async def buy_command(message: types.Message):
+@dp.message_handler(commands=['battle'])
+async def battle(message: types.Message):
     user_id = message.from_user.id
-    if user_id not in characters:
+    if user_id not in players:
         await message.reply("Сначала начни игру через /start")
         return
-    char = characters[user_id]
-    if char.location != "таверна":
-        await message.reply("Ты не в таверне!")
-        return
-    try:
-        args = message.get_args().split()
-        if not args:
-            await message.reply("Укажи номер товара: /buy <номер>")
-            return
-        item_index = int(args[0]) - 1
-        items = [
-            {"name": "зелье здоровья", "price": 10},
-            {"name": "эликсир силы", "price": 20},
-            {"name": "зелье магии", "price": 20},
-        ]
-        if 0 <= item_index < len(items):
-            item = items[item_index]
-            if char.buy_item(item["name"], item["price"]):
-                await message.reply(f"Ты купил {item['name']} за {item['price']} монет!")
-            else:
-                await message.reply(f"Недостаточно монет! Нужно {item['price']}, у тебя {char.coins}.")
-        else:
-            await message.reply("Неверный номер предмета!")
-    except (ValueError, IndexError):
-        await message.reply("Используй: /buy <номер>")
-
-async def use_command(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in characters:
-        await message.reply("Сначала начни игру через /start")
-        return
-    char = characters[user_id]
-    try:
-        args = message.get_args().split()
-        if not args:
-            await message.reply("Укажи предмет: /use <предмет>")
-            return
-        item_name = " ".join(args).lower()
-        result = char.use_item(item_name)
-        await message.reply(result)
-    except Exception as e:
-        await message.reply(f"Ошибка: {str(e)}")
-
-async def travel_command(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in characters:
-        await message.reply("Сначала начни игру через /start")
-        return
-    char = characters[user_id]
-    if not char.is_alive():
-        await message.reply("Ты мёртв! Игра окончена.")
-        return
+    char = players[user_id]
     
-    event = char.random_event()
-    response = f"📍 Ты отправляешься в путь...\n{event['text']}"
-    
-    # Применение эффекта события
-    if event["text"] == "Ты встретил старого мудреца на перекрестке. Он дарует тебе мудрость!":
-        char.strength += 1
-        response += "\n+1 к силе! Теперь она: " + str(char.strength)
-    elif event["text"] == "Грабители напали на тебя! Ты потерял немного монет.":
-        response += f"\nТвои монеты: {char.coins}"
-    elif event["text"] == "Ты нашёл старый сундук с сокровищами!":
-        response += f"\nТвои монеты: {char.coins}"
-    elif event["text"] == "Загадочная фигура предлагает тебе зелье здоровья в обмен на монеты.":
-        if char.coins >= 5:
-            char.buy_item("зелье здоровья", 5)
-            response += "\nЗелье здоровья добавлено в инвентарь!"
-        else:
-            response += "\nНе хватает монет для покупки..."
-    elif event["text"] == "Проклятие кольца усиливается! Ты чувствуешь боль.":
-        char.curse = min(10, char.curse + 1)
-        char.hp -= 1
-        response += f"\nПроклятие теперь {char.curse}/10, HP уменьшено на 1 (теперь {char.hp}/{char.max_hp})"
-    
-    # Смена локации случайно
-    old_location = char.location
-    locations = ["таверна", "лес", "горы", "болото", "город"]
-    new_location = random.choice(locations)
-    char.location = new_location
-    response += f"\nТы оказался в {new_location}."
-    
-    # Опыт за путешествие
-    if char.gain_exp(5):
-        response += f"\n🎉 Поздравляю! Ты достиг уровня {char.level}! Все характеристики +1, HP увеличено!"
-    
-    await message.reply(response)
-
-async def battle_command(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in characters:
-        await message.reply("Сначала начни игру через /start")
-        return
-    char = characters[user_id]
-    if not char.is_alive():
-        await message.reply("Ты мёртв! Игра окончена.")
-        return
-    
-    # Создание врага
-    enemy_hp = 20 + random.randint(0, 10) + char.level * 5
+    # Генерация врага
+    enemy_hp = 20 + random.randint(0, 20) + char.level * 5
     enemy_max_hp = enemy_hp
-    enemy_strength = 5 + random.randint(0, 5) + char.level // 2
-    enemy_name = random.choice(["Гоблин", "Скелет", "Волк", "Бандит", "Зомби"])
+    enemy_strength = 5 + random.randint(0, 5) + char.level * 2
     
-    battle_log = f"⚔️ Бой с {enemy_name}!\nHP врага: {enemy_hp}\nТвоё HP: {char.hp}/{char.max_hp}\n\n"
+    battle_log = f"⚔️ Ты встретил врага! HP: {enemy_hp}, Сила: {enemy_strength}\n\n"
     
-    # Боевой цикл
-    turn = 0
-    while char.is_alive() and enemy_hp > 0:
-        turn += 1
+    # Бой в 3 раунда
+    for round_num in range(1, 4):
+        battle_log += f"Раунд {round_num}:\n"
         
-        # Сначала проклятие
-        curse_damage = char.curse_effect()
-        if curse_damage > 0:
-            battle_log += f"Кольцо наносит {curse_damage} урона от проклятия!\n"
+        # Ход игрока
+        attack_choice = random.choice(["физическая", "магическая"])
+        if attack_choice == "физическая":
+            player_damage = char.attack_physical()
+            enemy_hp -= player_damage
+            battle_log += f"🗡️ Ты атакуешь физически и наносишь {player_damage} урона!\n"
+        else:
+            player_damage = char.attack_magical()
+            enemy_hp -= player_damage
+            battle_log += f"🔮 Ты используешь магию и наносишь {player_damage} урона!\n"
+        
+        if enemy_hp <= 0:
+            battle_log += f"💀 Враг повержен!\n"
+            break
+        
+        # Ход врага
+        enemy_damage = random.randint(0, enemy_strength)
+        actual_damage = char.defend(enemy_damage)
+        battle_log += f"👊 Враг атакует и наносит {actual_damage} урона!\n"
         
         if not char.is_alive():
-            battle_log += "Ты погиб от проклятия кольца!\n"
-            break
+            battle_log += "☠️ Ты погиб в бою!\n"
+            await message.reply(battle_log + "\n💀 Игра окончена.")
+            del players[user_id]
+            return
         
-        # Выбор действия ИИ
-        action = random.choice(["phys", "magic", "defend"])
+        # Проклятие действует каждый раунд
+        curse_damage = char.curse_effect()
+        if curse_damage > 0:
+            battle_log += f"☠️ Кольцо пожирает тебя: -{curse_damage} HP\n"
+        if not char.is_alive():
+            battle_log += "☠️ Кольцо высосало из тебя последние силы!\n"
+            await message.reply(battle_log + "\n💀 Игра окончена.")
+            del players[user_id]
+            return
         
-        if action == "phys":
-            damage = char.attack_physical()
-            enemy_hp -= damage
-            battle_log += f"Ты атакуешь физически и наносишь {damage} урона!\n"
-        elif action == "magic":
-            damage = char.attack_magical()
-            enemy_hp -= damage
-            battle_log += f"Ты атакуешь магией и наносишь {damage} урона!\n"
-        elif action == "defend":
-            battle_log += "Ты готовишься защищаться!\n"
-        
-        # Враг атакует
-        if enemy_hp > 0:
-            enemy_damage = enemy_strength + random.randint(0, 5)
-            if action == "defend":
-                actual_damage = char.defend(enemy_damage * 2)
-                battle_log += f"Враг атакует с силой {enemy_damage}, но ты защищаешься! Получено {actual_damage} урона.\n"
-            else:
-                actual_damage = char.defend(enemy_damage)
-                battle_log += f"Враг атакует с силой {enemy_damage}. Получено {actual_damage} урона.\n"
-        
-        if turn >= 10:
-            battle_log += "Бой затянулся... Враг убегает!\n"
-            enemy_hp = 0
-            break
+        battle_log += f"❤️ Твоё HP: {char.hp}/{char.max_hp} | 💀 Враг: {enemy_hp}/{enemy_max_hp}\n\n"
     
-    if char.is_alive():
-        # Награда
+    # Результат боя
+    if enemy_hp <= 0:
         exp_reward = 10 + random.randint(0, 10) + char.level * 2
         coin_reward = 5 + random.randint(0, 10) + char.level * 2
         char.coins += coin_reward
@@ -334,12 +246,10 @@ async def battle_command(message: types.Message):
         if char.gain_exp(exp_reward):
             battle_log += f"\n🎉 Поздравляю! Ты достиг уровня {char.level}! Все характеристики +1, HP увеличено!"
         
-        # Шанс усилить проклятие
         if random.randint(1, 5) == 1:
             char.curse = min(10, char.curse + 1)
             battle_log += f"\n☠️ Проклятие усилилось до {char.curse}/10!"
         
-        # Шанс получить предмет
         if random.randint(1, 3) == 1:
             items = ["зелье здоровья", "эликсир силы", "зелье магии"]
             item = random.choice(items)
@@ -347,5 +257,90 @@ async def battle_command(message: types.Message):
             battle_log += f"\n📦 Ты нашёл {item}!"
     else:
         battle_log += "\n💀 Ты погиб! Игра окончена."
+        await message.reply(battle_log)
+        del players[user_id]
+        return
     
-    await message
+    await message.reply(battle_log)
+
+@dp.message_handler(commands=['inventory'])
+async def show_inventory(message: types.Message):
+    user_id = message.from_user.id
+    if user_id not in players:
+        await message.reply("Сначала начни игру через /start")
+        return
+    char = players[user_id]
+    
+    if not char.inventory:
+        await message.reply("📦 Твой инвентарь пуст.")
+    else:
+        inv_text = "📦 Твой инвентарь:\n" + "\n".join([f"• {item}" for item in set(char.inventory)])
+        await message.reply(inv_text)
+
+@dp.message_handler(commands=['shop'])
+async def shop(message: types.Message):
+    user_id = message.from_user.id
+    if user_id not in players:
+        await message.reply("Сначала начни игру через /start")
+        return
+    char = players[user_id]
+    
+    items = [
+        ("зелье здоровья", 5, "Восстанавливает 30 HP"),
+        ("эликсир силы", 8, "Увеличивает силу на 2"),
+        ("зелье магии", 8, "Увеличивает магию на 2"),
+        ("зелье ловкости", 8, "Увеличивает ловкость на 2"),
+    ]
+    
+    shop_text = "🏪 Магазин:\n"
+    for i, (name, price, desc) in enumerate(items, 1):
+        shop_text += f"{i}. {name} — {price} монет — {desc}\n"
+    shop_text += f"\n💰 У тебя: {char.coins} монет"
+    
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    for i, (name, price, desc) in enumerate(items, 1):
+        if char.coins >= price:
+            keyboard.add(types.InlineKeyboardButton(f"Купить {name} ({price})", callback_data=f"buy_{name}"))
+    
+    await message.reply(shop_text, reply_markup=keyboard)
+
+@dp.callback_query_handler(lambda c: c.data.startswith('buy_'))
+async def process_buy(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    if user_id not in players:
+        await callback_query.message.reply("Сначала начни игру через /start")
+        await callback_query.answer()
+        return
+    
+    char = players[user_id]
+    item_name = callback_query.data[4:]
+    
+    prices = {"зелье здоровья": 5, "эликсир силы": 8, "зелье магии": 8, "зелье ловкости": 8}
+    price = prices.get(item_name, 5)
+    
+    if char.buy_item(item_name, price):
+        if item_name == "зелье ловкости":
+            char.agility += 2
+        await callback_query.message.reply(f"✅ Ты купил {item_name} за {price} монет!")
+    else:
+        await callback_query.message.reply("❌ У тебя недостаточно монет!")
+    
+    await callback_query.answer()
+
+@dp.message_handler(commands=['heal'])
+async def heal(message: types.Message):
+    user_id = message.from_user.id
+    if user_id not in players:
+        await message.reply("Сначала начни игру через /start")
+        return
+    char = players[user_id]
+    
+    if "зелье здоровья" in char.inventory:
+        result = char.use_item("зелье здоровья")
+        await message.reply(result)
+    else:
+        await message.reply("❌ У тебя нет зелья здоровья!")
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+    executor.start_polling(dp, skip_updates=True)
