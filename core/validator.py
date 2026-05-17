@@ -119,6 +119,10 @@ class Validator:
             code = re.sub(r'skip_updates\s*=\s*True', '', code)
             # Исправляем executor.start_polling
             code = re.sub(r'executor\.start_polling\(dp,\s*\)', 'executor.start_polling(dp)', code)
+            # Убираем кривые commands=['...'])
+            code = re.sub(r"commands\s*=\s*\[.*?\]\s*\)", "", code)
+            # Убираем двойные скобки )))
+            code = re.sub(r'\){2,}', ')', code)
 
             self.logger.info("Применены локальные автоисправления синтаксиса")
             return code
