@@ -92,71 +92,47 @@ async def heal_cmd(message: types.Message):
     """Лечение за монеты"""
     p = get_player(players, message.from_user.id)
     
-    # Проверяем, есть ли у игрока монеты
-    if p['coins'] < 10:
-        await message.reply(
-            "❌ <b>Недостаточно монет!</b>\n"
-            "💰 Лечение стоит 10 монет.\n"
-            "💪 Заработай монеты в бою или на исследовании!",
-            parse_mode="HTML"
-        )
+    if p["coins"] < 10:
+        await message.reply("❌ Недостаточно монет! Лечение стоит 10 монет.", parse_mode="HTML")
         return
     
-    # Проверяем, нужно ли лечение
-    if p['hp'] >= p['max_hp']:
-        await message.reply(
-            "💚 <b>Ты полностью здоров!</b>\n"
-            "Нет необходимости лечиться.",
-            parse_mode="HTML"
-        )
+    if p["hp"] >= p["max_hp"]:
+        await message.reply("❤️ У вас уже полное здоровье!", parse_mode="HTML")
         return
     
-    # Случайное количество восстанавливаемого HP (20-50)
+    # Случайное лечение от 10 до 30 HP
     import random
-    heal_amount = random.randint(20, 50)
-    
-    # Ограничиваем максимальным HP
-    old_hp = p['hp']
-    p['hp'] = min(p['hp'] + heal_amount, p['max_hp'])
-    actual_heal = p['hp'] - old_hp
-    p['coins'] -= 10
-    
-    # Случайные события при лечении
-    heal_events = [
-        f"🧙‍♂️ <b>Мудрый целитель</b> восстанавливает тебе {actual_heal} HP за 10 монет!",
-        f"🌿 <b>Травяной отвар</b> возвращает {actual_heal} HP. Цена - 10 монет.",
-        f"✨ <b>Магическое восстановление</b> даёт {actual_heal} HP. Потрачено 10 монет.",
-        f"🕯️ <b>Ритуал исцеления</b> восстанавливает {actual_heal} HP. С тебя 10 монет.",
-        f"💫 <b>Светлая энергия</b> наполняет тебя, возвращая {actual_heal} HP. -10 монет."
-    ]
+    heal_amount = random.randint(10, 30)
+    p["hp"] = min(p["max_hp"], p["hp"] + heal_amount)
+    p["coins"] -= 10
     
     await message.reply(
-        f"{random.choice(heal_events)}\n\n"
-        f"❤️ HP: {p['hp']}/{p['max_hp']}\n"
-        f"🪙 Монеты: {p['coins']}",
+        f"💊 Вы выпили лечебное зелье!\n"
+        f"❤️ +{heal_amount} HP (теперь {p['hp']}/{p['max_hp']})\n"
+        f"🪙 Осталось монет: {p['coins']}",
         parse_mode="HTML"
     )
 
 
 async def explore_cmd(message: types.Message):
-    """Исследование местности"""
+    """Исследование локации"""
     p = get_player(players, message.from_user.id)
     result = explore_event(p)
-    await message.reply(result, parse_mode="HTML")
+    await message.reply(result["message"], parse_mode="HTML")
 
 
 async def inventory_cmd(message: types.Message):
     """Просмотр инвентаря"""
     p = get_player(players, message.from_user.id)
-    inv_text = get_inventory_text(p)
-    await message.reply(inv_text, parse_mode="HTML")
+    text = get_inventory_text(p)
+    await message.reply(text, parse_mode="HTML")
 
 
 async def rest_cmd(message: types.Message):
     """Отдых в таверне"""
     p = get_player(players, message.from_user.id)
     result = rest(p)
-    await message.reply(result, parse_mode="HTML")
+    await message.reply(result["message"], parse_mode="HTML")
 
 
 async def shop_cmd(message: types.Message):
@@ -174,24 +150,26 @@ async def buy_cmd(message: types.Message):
     args = message.get_args()
     if not args:
         await message.reply(
-            "❌ <b>Укажи предмет для покупки!</b>\n"
+            "❌ Укажите предмет для покупки!\n"
             "Пример: /buy меч\n"
-            "Используй /shop для просмотра доступных предметов.",
+            "Используйте /shop для просмотра товаров.",
             parse_mode="HTML"
         )
         return
     
     item_name = args.strip().lower()
     result = buy_item(p, item_name)
-    await message.reply(result, parse_mode="HTML")
+    await message.reply(result["message"], parse_mode="HTML")
 
 
 async def feedback_cmd(message: types.Message):
     """Отправка отзыва"""
+    p = get_player(players, message.from_user.id)
+    
     args = message.get_args()
     if not args:
         await message.reply(
-            "📝 <b>Напиши свой отзыв после команды!</b>\n"
+            "❌ Напишите текст отзыва после команды!\n"
             "Пример: /feedback Отличная игра!",
             parse_mode="HTML"
         )
@@ -200,70 +178,43 @@ async def feedback_cmd(message: types.Message):
     feedback_text = args.strip()
     add_feedback(message.from_user.id, feedback_text)
     
-    # Случайные ответы на отзывы
-    import random
-    responses = [
-        "🌟 Спасибо за твой отзыв! Он поможет сделать игру лучше!",
-        "💫 Твоё мнение очень важно для нас! Спасибо!",
-        "✨ Отзыв принят! Мы ценим твоё участие в развитии игры!",
-        "🎯 Благодарим за обратную связь! Каждый отзыв делает Уроборос лучше!",
-        "📖 Твой отзыв записан в летопись Уробороса! Спасибо!"
-    ]
-    
     await message.reply(
-        f"{random.choice(responses)}\n\n"
-        f"<i>Твой отзыв:</i> {feedback_text}",
+        "✅ Спасибо за ваш отзыв! Мы ценим ваше мнение.",
         parse_mode="HTML"
     )
 
 
 async def clear_feedback_cmd(message: types.Message):
-    """Очистка отзывов"""
-    count = get_feedback_count()
-    if count == 0:
-        await message.reply(
-            "📭 <b>Нет отзывов для очистки.</b>",
-            parse_mode="HTML"
-        )
+    """Очистка отзывов (только для админа)"""
+    # Проверяем, является ли пользователь админом
+    if message.from_user.id != 123456789:  # Замените на ID админа
+        await message.reply("❌ У вас нет прав на выполнение этой команды.", parse_mode="HTML")
         return
     
+    count = get_feedback_count()
     clear_feedback()
+    
     await message.reply(
-        f"🧹 <b>Очищено {count} отзывов!</b>\n"
-        f"Теперь можно собирать новые.",
+        f"✅ Очищено {count} отзывов.",
         parse_mode="HTML"
     )
 
 
 async def unknown_cmd(message: types.Message):
     """Обработка неизвестных команд"""
-    import random
-    
-    responses = [
-        "🤔 <b>Неизвестная команда.</b>\nИспользуй /help для списка команд.",
-        "❓ <b>Я не знаю такой команды.</b>\nПопробуй /help.",
-        "😕 <b>Что-то пошло не так.</b>\nВведи /help чтобы узнать доступные команды.",
-        "🧙‍♂️ <b>Старый маг качает головой:</b>\n'Я не знаю такого заклинания. Попробуй /help.'",
-        "📜 <b>В древних свитках нет такой команды.</b>\nИспользуй /help для изучения доступных заклинаний."
-    ]
-    
-    await message.reply(random.choice(responses), parse_mode="HTML")
+    await message.reply(
+        "❓ Неизвестная команда. Используйте /help для списка доступных команд.",
+        parse_mode="HTML"
+    )
 
 
 # ============================================================
-# ЗАПУСК БОТА
+# РЕГИСТРАЦИЯ КОМАНД
 # ============================================================
 
-if __name__ == "__main__":
-    if not BOT_TOKEN:
-        logger.error("❌ TELEGRAM_BOT_TOKEN не найден в переменных окружения!")
-        sys.exit(1)
+def register_handlers(dp: Dispatcher):
+    """Регистрация всех обработчиков команд"""
     
-    bot = Bot(token=BOT_TOKEN, parse_mode=types.ParseMode.HTML)
-    storage = MemoryStorage()
-    dp = Dispatcher(bot, storage=storage)
-    
-    # Регистрация команд
     dp.register_message_handler(start_cmd, commands=['start'])
     dp.register_message_handler(help_cmd, commands=['help'])
     dp.register_message_handler(stats_cmd, commands=['stats'])
@@ -278,6 +229,24 @@ if __name__ == "__main__":
     dp.register_message_handler(feedback_cmd, commands=['feedback'])
     dp.register_message_handler(clear_feedback_cmd, commands=['clear_feedback'])
     dp.register_message_handler(unknown_cmd)
+
+
+# ============================================================
+# ЗАПУСК БОТА
+# ============================================================
+
+if __name__ == '__main__':
+    if not BOT_TOKEN:
+        logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
+        sys.exit(1)
+    
+    # Инициализация бота
+    bot = Bot(token=BOT_TOKEN)
+    storage = MemoryStorage()
+    dp = Dispatcher(bot, storage=storage)
+    
+    # Регистрация команд
+    register_handlers(dp)
     
     # Запуск health сервера (если нужно)
     try:
