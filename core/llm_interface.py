@@ -15,6 +15,8 @@ class LLMInterface:
 
     def analyze_bugs(self, code):
         self.logger.info("LLM: поиск багов")
+        from core.feedback import get_feedback_summary, clear_feedback
+        feedback = get_feedback_summary()
         system_prompt = (
             "Ты — senior Python-разработчик. Оптимизируй код текстовой RPG 'Уроборос' на aiogram 2.25.1.\n\n"
             "ШАГ 1. УДАЛИ ВСЕ команды-заглушки: найди все async def которые содержат ТОЛЬКО один reply() с текстом-заглушкой. Удали их полностью вместе с регистрацией в dp.\n"
@@ -27,6 +29,8 @@ class LLMInterface:
             "- Заменяй reply_text на reply\n"
             "- Убирай Update, Application, filters из импортов\n"
             "- Первая строка ответа — import. Без пояснений, без markdown."
+            f"\n\nПОЖЕЛАНИЯ ПОЛЬЗОВАТЕЛЕЙ (учти их при оптимизации):\n{feedback}\n\n"
+            "После обработки пожеланий удали их через core.feedback.clear_feedback()."
         )
         return self._call(code, system_prompt, temperature=0.2)
 
@@ -55,6 +59,9 @@ class LLMInterface:
             "- НЕ используй reply_text — только reply или answer\n"
             "- Верни ТОЛЬКО полный код. Первая строка — import. Без пояснений."
             "Не оборачивай код в ``` или ```python."
+            "ДОБАВЬ команду /report для приёма багов и пожеланий от админа.\n"
+            "Команда должна сохранять сообщение через core.feedback.add_feedback().\n"
+            "Только админ (chat_id=6909561387) может использовать эту команду.\n"
         )
         return self._call(code, system_prompt, temperature=1.0)
 
