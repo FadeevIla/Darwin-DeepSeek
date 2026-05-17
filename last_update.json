@@ -1,6 +1,6 @@
 {
-  "description": "Добавил команды /feedback и /clear_feedback — теперь можно оставлять отзывы и чистить их!",
-  "commit": "d85591596e5b84ecf2a2f1ad03fc8e45e6ccb0aa",
-  "timestamp": "2026-05-17T15:45:24.856373+00:00",
-  "version": 2
+  "description": "Добавил команду /feedback — теперь можно оставлять отзывы!",
+  "commit": "1c02ba27332f5d8338aa24266caaac1e469738b2",
+  "timestamp": "2026-05-17T16:45:52.601234+00:00",
+  "version": 3
 }
