@@ -94,7 +94,7 @@ async def heal_cmd(message: types.Message):
     
     # Проверяем, не в бою ли игрок
     if "enemy" in p and p["enemy"] is not None:
-        await message.reply("⚠️ Нельзя лечиться во время боя! Сначала убей врага или сбеги.", parse_mode="HTML")
+        await message.reply("⚠️ Нельзя лечиться во время боя! Сначала убей врага.", parse_mode="HTML")
         return
     
     # Стоимость лечения зависит от уровня
@@ -102,46 +102,35 @@ async def heal_cmd(message: types.Message):
     
     if p["coins"] < heal_cost:
         await message.reply(
-            f"❌ Недостаточно монет! Лечение стоит {heal_cost} 🪙, у тебя только {p['coins']} 🪙.\n"
-            f"Заработай монеты в бою или исследуя локации!",
+            f"❌ Недостаточно монет! Лечение стоит {heal_cost} 🪙, у тебя только {p['coins']}.",
             parse_mode="HTML"
         )
         return
     
     if p["hp"] >= p["max_hp"]:
-        await message.reply("❤️ У тебя и так полное здоровье! Береги монеты.", parse_mode="HTML")
+        await message.reply("❤️ У тебя уже полное здоровье!", parse_mode="HTML")
         return
     
-    # Случайное количество восстанавливаемого HP (от 20% до 60% от max_hp)
-    import random
-    heal_amount = random.randint(p["max_hp"] // 5, p["max_hp"] * 3 // 5)
-    
-    # Если лечение превышает максимум, восстанавливаем до максимума
-    if p["hp"] + heal_amount > p["max_hp"]:
-        heal_amount = p["max_hp"] - p["hp"]
-    
+    # Лечим
     p["coins"] -= heal_cost
-    p["hp"] += heal_amount
+    heal_amount = 20 + p["level"] * 5
+    p["hp"] = min(p["max_hp"], p["hp"] + heal_amount)
     
-    # Случайное событие при лечении
-    heal_events = [
-        f"🧙‍♂️ Мудрый старец исцелил тебя за {heal_cost} 🪙. Ты чувствуешь прилив сил! (+{heal_amount} ❤️)",
-        f"🌿 Ты нашёл целебные травы и заварил чай. Всего за {heal_cost} 🪙 ты восстановил {heal_amount} ❤️!",
-        f"🏥 В местной таверне тебя подлечили за {heal_cost} 🪙. Вкусное зелье вернуло {heal_amount} ❤️!",
-        f"🔮 Таинственная незнакомка коснулась твоего лба. За {heal_cost} 🪙 ты чувствуешь себя намного лучше! (+{heal_amount} ❤️)",
-        f"⚗️ Алхимик продал тебе зелье за {heal_cost} 🪙. Оно восстанавливает {heal_amount} ❤️, но оставляет странный привкус..."
-    ]
-    
-    await message.reply(random.choice(heal_events), parse_mode="HTML")
+    await message.reply(
+        f"💊 Ты вылечился на {heal_amount} HP за {heal_cost} 🪙!\n"
+        f"❤️ Текущее HP: {p['hp']}/{p['max_hp']}\n"
+        f"🪙 Осталось монет: {p['coins']}",
+        parse_mode="HTML"
+    )
 
 
 async def explore_cmd(message: types.Message):
-    """Исследование локации"""
+    """Исследование местности"""
     p = get_player(players, message.from_user.id)
     
     # Проверяем, не в бою ли игрок
     if "enemy" in p and p["enemy"] is not None:
-        await message.reply("⚠️ Нельзя исследовать во время боя! Сначала разберись с врагом.", parse_mode="HTML")
+        await message.reply("⚠️ Нельзя исследовать во время боя! Сначала убей врага.", parse_mode="HTML")
         return
     
     result = explore_event(p)
@@ -156,12 +145,12 @@ async def inventory_cmd(message: types.Message):
 
 
 async def rest_cmd(message: types.Message):
-    """Отдых в лагере"""
+    """Отдых для восстановления"""
     p = get_player(players, message.from_user.id)
     
     # Проверяем, не в бою ли игрок
     if "enemy" in p and p["enemy"] is not None:
-        await message.reply("⚠️ Нельзя отдыхать во время боя! Враг не даст тебе расслабиться.", parse_mode="HTML")
+        await message.reply("⚠️ Нельзя отдыхать во время боя! Сначала убей врага.", parse_mode="HTML")
         return
     
     result = rest(p)
@@ -183,14 +172,15 @@ async def buy_cmd(message: types.Message):
     args = message.get_args()
     if not args:
         await message.reply(
-            "❌ Укажи, что хочешь купить!\n"
-            "Пример: /buy меч\n"
-            "Используй /shop чтобы посмотреть ассортимент.",
+            "❌ Укажи предмет для покупки!\n"
+            "Пример: /buy sword\n"
+            "Используй /shop для просмотра товаров.",
             parse_mode="HTML"
         )
         return
     
-    result = buy_item(p, args.strip().lower())
+    item_name = args.strip().lower()
+    result = buy_item(p, item_name)
     await message.reply(result["message"], parse_mode="HTML")
 
 
@@ -205,15 +195,16 @@ async def feedback_cmd(message: types.Message):
         )
         return
     
-    add_feedback(message.from_user.id, args)
-    await message.reply("✅ Спасибо за отзыв! Мы учтём твои пожелания.", parse_mode="HTML")
+    feedback_text = args.strip()
+    add_feedback(message.from_user.id, feedback_text)
+    await message.reply("✅ Спасибо за отзыв! Мы ценим твоё мнение.", parse_mode="HTML")
 
 
 async def clear_feedback_cmd(message: types.Message):
     """Очистка отзывов (только для админа)"""
     # Проверяем, является ли пользователь админом
     if message.from_user.id != 123456789:  # Замени на свой ID
-        await message.reply("❌ Только администратор может очищать отзывы!", parse_mode="HTML")
+        await message.reply("❌ У тебя нет прав на очистку отзывов!", parse_mode="HTML")
         return
     
     count = get_feedback_count()
@@ -224,7 +215,7 @@ async def clear_feedback_cmd(message: types.Message):
 async def unknown_cmd(message: types.Message):
     """Обработка неизвестных команд"""
     await message.reply(
-        "❓ Неизвестная команда. Используй /help чтобы узнать доступные команды.",
+        "❓ Неизвестная команда. Используй /help для списка команд.",
         parse_mode="HTML"
     )
 
@@ -238,9 +229,8 @@ if __name__ == "__main__":
         logger.error("❌ TELEGRAM_BOT_TOKEN не задан!")
         sys.exit(1)
     
-    bot = Bot(token=BOT_TOKEN, parse_mode=types.ParseMode.HTML)
-    storage = MemoryStorage()
-    dp = Dispatcher(bot, storage=storage)
+    bot = Bot(token=BOT_TOKEN)
+    dp = Dispatcher(bot, storage=MemoryStorage())
     
     # Регистрация команд
     dp.register_message_handler(start_cmd, commands=['start'])
