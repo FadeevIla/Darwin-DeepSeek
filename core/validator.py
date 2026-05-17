@@ -116,23 +116,27 @@ class Validator:
             code = re.sub(r"commands\s*=\s*\[.*?\]\s*\)", "", code)
             code = re.sub(r'\){2,}', ')', code)
 
-            # 🆕 Автопочинка незакрытых строк
+            # Автопочинка строк
             lines = code.split('\n')
             fixed_lines = []
             for line in lines:
-                # Считаем кавычки в строке
+                # Кавычки
                 double_quotes = line.count('"') - line.count('\\"')
                 single_quotes = line.count("'") - line.count("\\'")
-
-                # Если нечётное количество кавычек — добавляем закрывающую
                 if double_quotes % 2 != 0:
                     line = line + '"'
                 if single_quotes % 2 != 0:
                     line = line + "'"
-
-                # Если строка обрывается на reply(" — закрываем скобку
                 if line.strip().endswith(('reply("', 'reply(\'', 'answer("', 'answer(\'')):
                     line = line + '")'
+
+                # 🆕 Скобки [ ] и ( )
+                open_brackets = line.count('[') - line.count(']')
+                open_parens = line.count('(') - line.count(')')
+                if open_brackets > 0:
+                    line = line + ']' * open_brackets
+                if open_parens > 0:
+                    line = line + ')' * open_parens
 
                 fixed_lines.append(line)
             code = '\n'.join(fixed_lines)
