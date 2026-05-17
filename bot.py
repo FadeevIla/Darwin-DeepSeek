@@ -10,7 +10,6 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.utils import executor
 
 from core.health_server import start_health_server
-from core.feedback import add_feedback, clear_feedback
 from core.rpg_player import get_player
 from core.rpg_combat import get_random_enemy, fight_result
 from core.rpg_shop import get_shop_list, buy_item
@@ -93,64 +92,26 @@ async def buy_cmd(message: types.Message):
     await message.reply(msg)
 
 
-async def report_cmd(message: types.Message):
-    """Команда для отправки отзыва/багрепорта"""
-    args = message.get_args().strip()
-    if not args:
-        await message.reply(
-            "📝 <b>Отправка отзыва</b>\n\n"
-            "Напиши /report [текст отзыва] — и мы его получим.\n"
-            "Спасибо за помощь в улучшении игры!",
-            parse_mode="HTML"
-        )
-        return
-    
-    user_id = message.from_user.id
-    username = message.from_user.username or "Неизвестный"
-    
-    # Сохраняем отзыв
-    add_feedback(user_id, username, args)
-    
-    # Случайный ответ
-    import random
-    responses = [
-        "✅ Спасибо за отзыв! Мы обязательно его рассмотрим.",
-        "👍 Отлично! Твой отзыв поможет сделать игру лучше.",
-        "📨 Получено! Команда разработки благодарит тебя.",
-        "🌟 Твой голос важен для нас! Спасибо за обратную связь."
-    ]
-    
-    await message.reply(
-        f"{random.choice(responses)}\n\n"
-        f"<i>Твой отзыв:</i> {args}",
-        parse_mode="HTML"
-    )
-    
-    logger.info(f"Отзыв от {username} (ID: {user_id}): {args}")
-
-
 async def feedback_cmd(message: types.Message):
-    """Команда для просмотра статистики отзывов (только для админа)"""
-    # Простая проверка — только для определённых пользователей
-    admin_ids = [123456789]  # Замени на реальные ID администраторов
-    
-    if message.from_user.id not in admin_ids:
-        await message.reply("❌ У тебя нет доступа к этой команде.")
-        return
-    
-    from core.feedback import get_feedback_stats
-    stats = get_feedback_stats()
-    
-    await message.reply(
-        f"📊 <b>Статистика отзывов</b>\n\n"
-        f"Всего отзывов: {stats['total']}\n"
-        f"Последний отзыв: {stats['last_feedback'] or 'нет'}",
-        parse_mode="HTML"
-    )
+    """Команда для отправки отзыва (заглушка для регистрации)"""
+    from core.feedback import add_feedback, clear_feedback
+    p = get_player(players, message.from_user.id)
+    feedback_text = message.get_args().strip()
+    if feedback_text:
+        success, msg = add_feedback(p, feedback_text)
+    else:
+        success, msg = False, "Укажи текст отзыва: /feedback <текст>"
+    await message.reply(msg)
 
 
-# ============================================================
-# ЗАПУСК
+async def clear_feedback_cmd(message: types.Message):
+    """Команда для очистки отзывов"""
+    from core.feedback import add_feedback, clear_feedback
+    p = get_player(players, message.from_user.id)
+    success, msg = clear_feedback(p)
+    await message.reply(msg)
+
+
 # ============================================================
 
 if __name__ == "__main__":
@@ -171,8 +132,8 @@ if __name__ == "__main__":
     dp.register_message_handler(rest_cmd, commands=['rest'])
     dp.register_message_handler(shop_cmd, commands=['shop'])
     dp.register_message_handler(buy_cmd, commands=['buy'])
-    dp.register_message_handler(report_cmd, commands=['report'])
     dp.register_message_handler(feedback_cmd, commands=['feedback'])
+    dp.register_message_handler(clear_feedback_cmd, commands=['clear_feedback'])
 
     logger.info("🐉 Уроборос запущен!")
     executor.start_polling(dp)
