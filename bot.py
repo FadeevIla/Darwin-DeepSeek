@@ -1,8 +1,7 @@
-# bot.py — Стартовый код для Дарвина (DeepSeek)
-"""Текстовая RPG 'Уроборос' на aiogram 2.25.1."""
+# bot.py — Текстовая RPG "Уроборос"
+"""Компактный бот — механики в core/rpg_*.py"""
 import os
 import sys
-import random
 import logging
 from pathlib import Path
 
@@ -14,78 +13,41 @@ from aiogram.utils import executor
 
 from core.health_server import start_health_server
 from core.feedback import add_feedback
+from core.rpg_player import get_player
+from core.rpg_combat import get_random_enemy, fight_result
+from core.rpg_shop import get_shop_list, buy_item
+from core.rpg_inventory import get_inventory_text
+from core.rpg_events import rest
+from core.rpg_help import START_MESSAGE, HELP_MESSAGE
 
-# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Токен бота
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
-# Хранилище состояний игроков
+# Хранилище игроков
 players = {}
 
 
 # ============================================================
-# КОМАНДЫ БОТА
+# КОМАНДЫ (только регистрация, логика в модулях)
 # ============================================================
 
 async def start_cmd(message: types.Message):
-    """Приветствие и начало игры."""
-    user_id = message.from_user.id
-    if user_id not in players:
-        players[user_id] = {
-            "hp": 100,
-            "max_hp": 100,
-            "level": 1,
-            "xp": 0,
-            "coins": 50,
-            "curse": 0,
-            "inventory": [],
-            "weapon": "Кулаки",
-            "armor": "Одежда путника",
-        }
-    await message.reply(
-        "🐉 <b>УРОБОРОС</b> — Текстовая RPG\n\n"
-        "Ты — последний носитель древнего кольца Уроборос.\n"
-        "Оно даёт силу, но медленно пожирает владельца...\n\n"
-        "⚔️ /fight — сражаться с врагом\n"
-        "🎒 /inventory — посмотреть инвентарь\n"
-        "📊 /stats — характеристики\n"
-        "🏕 /rest — отдохнуть у костра\n"
-        "🛒 /shop — торговец\n"
-        "📝 /report — сообщить о баге",
-        parse_mode="HTML",
-    )
+    get_player(players, message.from_user.id)
+    await message.reply(START_MESSAGE, parse_mode="HTML")
 
 
 async def help_cmd(message: types.Message):
-    """Справка по командам."""
-    await message.reply(
-        "🐉 <b>УРОБОРОС</b>\n\n"
-        "⚔️ /fight — бой со случайным врагом\n"
-        "🎒 /inventory — твои предметы\n"
-        "📊 /stats — твои характеристики\n"
-        "🏕 /rest — восстановить здоровье\n"
-        "🛒 /shop — купить предметы\n"
-        "📝 /report [текст] — сообщить о баге",
-        parse_mode="HTML",
-    )
+    await message.reply(HELP_MESSAGE, parse_mode="HTML")
 
 
 async def stats_cmd(message: types.Message):
-    """Показывает характеристики игрока."""
-    user_id = message.from_user.id
-    if user_id not in players:
-        players[user_id] = {"hp": 100, "max_hp": 100, "level": 1, "xp": 0, "coins": 50, "curse": 0, "inventory": [],
-                            "weapon": "Кулаки", "armor": "Одежда путника"}
-
-    p = players[user_id]
+    p = get_player(players, message.from_user.id)
     await message.reply(
         f"📊 <b>Характеристики</b>\n"
         f"❤️ HP: {p['hp']}/{p['max_hp']}\n"
-        f"⭐ Уровень: {p['level']}\n"
-        f"✨ Опыт: {p['xp']}/{p['level'] * 100}\n"
+        f"⭐ Уровень: {p['level']} (XP: {p['xp']}/{p['level'] * 100})\n"
         f"🪙 Монеты: {p['coins']}\n"
         f"🌀 Проклятие: {p['curse']}/100\n"
         f"⚔️ Оружие: {p['weapon']}\n"
@@ -95,165 +57,70 @@ async def stats_cmd(message: types.Message):
 
 
 async def fight_cmd(message: types.Message):
-    """Бой со случайным врагом."""
-    user_id = message.from_user.id
-    if user_id not in players:
-        players[user_id] = {"hp": 100, "max_hp": 100, "level": 1, "xp": 0, "coins": 50, "curse": 0, "inventory": [],
-                            "weapon": "Кулаки", "armor": "Одежда путника"}
-
-    enemies = [
-        {"name": "Теневой волк", "hp": 30, "damage": 15, "xp": 30, "coins": 20},
-        {"name": "Страж руин", "hp": 50, "damage": 20, "xp": 50, "coins": 35},
-        {"name": "Дух проклятого", "hp": 40, "damage": 25, "xp": 40, "coins": 30},
-    ]
-    enemy = random.choice(enemies)
-    enemy_hp = enemy["hp"]
-
-    # Расчёт урона игрока
-    player_damage = random.randint(10, 25) + players[user_id]["level"] * 2
-    enemy_damage = random.randint(enemy["damage"] - 5, enemy["damage"] + 5)
-
-    # Критический удар (20% шанс)
-    crit = random.random() < 0.2
-    if crit:
-        player_damage *= 2
-
-    enemy_hp -= player_damage
-
-    # Исход боя
-    if enemy_hp <= 0:
-        players[user_id]["xp"] += enemy["xp"]
-        players[user_id]["coins"] += enemy["coins"]
-        players[user_id]["curse"] = min(100, players[user_id]["curse"] + random.randint(0, 3))
-
-        # Повышение уровня
-        if players[user_id]["xp"] >= players[user_id]["level"] * 100:
-            players[user_id]["level"] += 1
-            players[user_id]["xp"] = 0
-            players[user_id]["max_hp"] += 20
-            players[user_id]["hp"] = players[user_id]["max_hp"]
-            level_up = "\n🎉 Уровень повышен!"
-        else:
-            level_up = ""
-
-        crit_text = "💥 КРИТИЧЕСКИЙ УДАР! " if crit else ""
-        await message.reply(
-            f"⚔️ Бой с <b>{enemy['name']}</b>\n\n"
-            f"{crit_text}Ты наносишь {player_damage} урона.\n"
-            f"Победа!{level_up}\n"
-            f"Получено: {enemy['xp']} XP, {enemy['coins']} 🪙\n"
-            f"🌀 Проклятие: {players[user_id]['curse']}/100",
-            parse_mode="HTML",
-        )
-    else:
-        players[user_id]["hp"] -= enemy_damage
-        await message.reply(
-            f"⚔️ Бой с <b>{enemy['name']}</b>\n\n"
-            f"Ты наносишь {player_damage} урона, но враг выжил!\n"
-            f"Враг наносит {enemy_damage} урона в ответ.\n"
-            f"❤️ Твоё HP: {players[user_id]['hp']}/{players[user_id]['max_hp']}\n\n"
-            f"<i>Продолжай атаковать!</i>",
-            parse_mode="HTML",
-        )
-        # Сохраняем состояние врага
-        players[user_id]["enemy"] = {"name": enemy["name"], "hp": enemy_hp, "damage": enemy["damage"],
-                                     "xp": enemy["xp"], "coins": enemy["coins"]}
+    p = get_player(players, message.from_user.id)
+    enemy = get_random_enemy()
+    result = fight_result(p, enemy)
+    # Сохраняем врага если бой не окончен
+    if not result["win"]:
+        players[message.from_user.id]["enemy"] = result["enemy"]
+    await message.reply(result["message"], parse_mode="HTML")
 
 
 async def inventory_cmd(message: types.Message):
-    """Показывает инвентарь."""
-    user_id = message.from_user.id
-    if user_id not in players:
-        players[user_id] = {"hp": 100, "max_hp": 100, "level": 1, "xp": 0, "coins": 50, "curse": 0, "inventory": [],
-                            "weapon": "Кулаки", "armor": "Одежда путника"}
-
-    inv = players[user_id]["inventory"]
-    if not inv:
-        await message.reply("🎒 Инвентарь пуст. Сразись с врагами или купи предметы в /shop!")
-    else:
-        await message.reply(f"🎒 <b>Инвентарь</b>\n" + "\n".join(f"• {item}" for item in inv), parse_mode="HTML")
+    p = get_player(players, message.from_user.id)
+    await message.reply(get_inventory_text(p), parse_mode="HTML")
 
 
 async def rest_cmd(message: types.Message):
-    """Отдых у костра — восстанавливает HP."""
-    user_id = message.from_user.id
-    if user_id not in players:
-        players[user_id] = {"hp": 100, "max_hp": 100, "level": 1, "xp": 0, "coins": 50, "curse": 0, "inventory": [],
-                            "weapon": "Кулаки", "armor": "Одежда путника"}
-
-    heal = random.randint(20, 40)
-    players[user_id]["hp"] = min(players[user_id]["max_hp"], players[user_id]["hp"] + heal)
-
-    # Случайное событие у костра
-    events = [
-        "Ты смотришь на пламя и чувствуешь, как кольцо слегка сжимает палец...",
-        "В темноте за костром кто-то наблюдает за тобой.",
-        "Тёплый огонь прогоняет холод и страх.",
-    ]
-    event = random.choice(events)
-
-    await message.reply(
-        f"🏕 Ты разводишь костёр и отдыхаешь.\n"
-        f"❤️ Восстановлено {heal} HP.\n"
-        f"Текущее HP: {players[user_id]['hp']}/{players[user_id]['max_hp']}\n\n"
-        f"<i>{event}</i>",
-        parse_mode="HTML",
-    )
+    p = get_player(players, message.from_user.id)
+    msg = rest(p)
+    await message.reply(msg, parse_mode="HTML")
 
 
 async def shop_cmd(message: types.Message):
-    """Магазин предметов."""
-    items = [
-        {"name": "Зелье здоровья", "price": 30, "effect": "heal"},
-        {"name": "Железный меч", "price": 100, "effect": "weapon"},
-        {"name": "Кожаный доспех", "price": 80, "effect": "armor"},
-    ]
-
-    item_list = "\n".join(f"• {i['name']} — {i['price']} 🪙" for i in items)
     await message.reply(
-        f"🛒 <b>Торговец</b>\n\n"
-        f"{item_list}\n\n"
-        f"Напиши /buy [номер] чтобы купить (пока не реализовано — Дарвин улучшит!)",
+        f"🛒 <b>Торговец</b>\n\n{get_shop_list()}\n\n"
+        f"Напиши /buy [номер] для покупки.",
         parse_mode="HTML",
     )
 
 
-async def report_cmd(message: types.Message):
-    """Принимает баги и пожелания от админа."""
-    user_id = message.from_user.id
-    if user_id != 6909561387:
-        await message.reply("⛔ Эта команда только для администратора.")
-        return
+async def buy_cmd(message: types.Message):
+    p = get_player(players, message.from_user.id)
+    try:
+        idx = int(message.get_args().strip()) - 1
+        success, msg = buy_item(p, idx)
+    except (ValueError, IndexError):
+        success, msg = False, "Укажи номер товара: /buy 1"
+    await message.reply(msg)
 
+
+async def report_cmd(message: types.Message):
+    if message.from_user.id != 6909561387:
+        await message.reply("⛔ Только для администратора.")
+        return
     text = message.get_args()
     if not text:
-        await message.reply("📝 Использование: /report текст сообщения")
+        await message.reply("📝 /report текст")
         return
-
-    try:
-        add_feedback(text, "admin")
-        await message.reply("✅ Сообщение отправлено! Спасибо за фидбек.")
-    except Exception as e:
-        await message.reply(f"❌ Ошибка: {e}")
+    add_feedback(text, "admin")
+    await message.reply("✅ Отправлено!")
 
 
 # ============================================================
-# ЗАПУСК БОТА
+# ЗАПУСК
 # ============================================================
 
 if __name__ == "__main__":
-    if BOT_TOKEN == "твой_токен_бота":
+    if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
         sys.exit(1)
 
-    # Запускаем health-сервер для Render
     start_health_server()
 
-    # Создаём бота
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(bot, storage=MemoryStorage())
 
-    # Регистрируем команды
     dp.register_message_handler(start_cmd, commands=['start'])
     dp.register_message_handler(help_cmd, commands=['help'])
     dp.register_message_handler(stats_cmd, commands=['stats'])
@@ -261,6 +128,7 @@ if __name__ == "__main__":
     dp.register_message_handler(inventory_cmd, commands=['inventory'])
     dp.register_message_handler(rest_cmd, commands=['rest'])
     dp.register_message_handler(shop_cmd, commands=['shop'])
+    dp.register_message_handler(buy_cmd, commands=['buy'])
     dp.register_message_handler(report_cmd, commands=['report'])
 
     logger.info("🐉 Уроборос запущен!")
