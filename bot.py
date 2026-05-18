@@ -4,7 +4,13 @@ import logging
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-
+# Автофикс импортов ПЕРЕД всеми остальными импортами
+try:
+    from core.import_fixer import fix_all_imports
+    fix_all_imports()
+except Exception as e:
+    print(f"⚠️ Фиксер не сработал: {e}")
+    
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.utils import executor
