@@ -100,19 +100,23 @@ async def shop_cmd(message: types.Message):
     shop_list = get_shop_list()
     text = "🏪 <b>Магазин Уробороса</b>\n\n"
     for item in shop_list:
-        text += f"• {item['name']} — {item['price']} 🪙\n"
-    text += "\nИспользуй /buy <название> для покупки."
+        text += f"<b>{item['name']}</b> — {item['cost']} 🪙\n"
+        text += f"  {item['description']}\n"
+        text += f"  /buy_{item['id']} — купить\n\n"
+    text += f"💰 Твои монеты: {p['coins']}"
     await message.reply(text, parse_mode="HTML")
 
 
 async def buy_cmd(message: types.Message):
     p = get_player(players, message.from_user.id)
-    args = message.get_args()
-    if not args:
-        await message.reply("⚠️ Укажи название предмета: /buy <название>", parse_mode="HTML")
+    # Извлекаем ID предмета из команды
+    item_id = message.get_args()
+    if not item_id:
+        await message.reply("⚠️ Укажи ID предмета: /buy_<id>", parse_mode="HTML")
         return
-    result = buy_item(p, args)
-    await message.reply(result, parse_mode="HTML")
+    
+    result = buy_item(p, item_id)
+    await message.reply(result["message"], parse_mode="HTML")
 
 
 async def inventory_cmd(message: types.Message):
@@ -124,13 +128,13 @@ async def inventory_cmd(message: types.Message):
 async def rest_cmd(message: types.Message):
     p = get_player(players, message.from_user.id)
     result = rest(p)
-    await message.reply(result, parse_mode="HTML")
+    await message.reply(result["message"], parse_mode="HTML")
 
 
 async def explore_cmd(message: types.Message):
     p = get_player(players, message.from_user.id)
     result = explore_event(p)
-    await message.reply(result, parse_mode="HTML")
+    await message.reply(result["message"], parse_mode="HTML")
 
 
 async def quests_cmd(message: types.Message):
@@ -142,21 +146,28 @@ async def quests_cmd(message: types.Message):
 async def reward_cmd(message: types.Message):
     p = get_player(players, message.from_user.id)
     result = get_quest_reward(p)
-    await message.reply(result, parse_mode="HTML")
+    await message.reply(result["message"], parse_mode="HTML")
 
 
 async def feedback_cmd(message: types.Message):
-    args = message.get_args()
-    if not args:
-        await message.reply("📝 Напиши отзыв: /feedback <текст>", parse_mode="HTML")
+    """Оставить отзыв"""
+    text = message.get_args()
+    if not text:
+        await message.reply("📝 Напиши отзыв после команды: /feedback <текст>", parse_mode="HTML")
         return
-    add_feedback(message.from_user.id, args)
-    await message.reply("✅ Спасибо за отзыв!", parse_mode="HTML")
+    
+    add_feedback(message.from_user.id, text)
+    await message.reply("✅ Спасибо за отзыв! Он поможет сделать игру лучше.", parse_mode="HTML")
 
 
 async def clear_feedback_cmd(message: types.Message):
+    """Очистить отзывы (только для разработчика)"""
+    if message.from_user.id != 123456789:  # Замени на свой ID
+        await message.reply("⛔ Эта команда только для разработчика.", parse_mode="HTML")
+        return
+    
     clear_feedback()
-    await message.reply("🗑️ Все отзывы очищены.", parse_mode="HTML")
+    await message.reply("✅ Все отзывы очищены.", parse_mode="HTML")
 
 
 async def unknown_cmd(message: types.Message):
@@ -164,21 +175,21 @@ async def unknown_cmd(message: types.Message):
 
 
 # ============================================================
-# РЕГИСТРАЦИЯ КОМАНД
+# РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ
 # ============================================================
 
 def register_handlers(dp: Dispatcher):
-    dp.register_message_handler(start_cmd, commands=['start', 'begin', 'new'])
-    dp.register_message_handler(help_cmd, commands=['help', 'h', 'commands'])
-    dp.register_message_handler(stats_cmd, commands=['stats', 'stat', 'profile', 'me'])
-    dp.register_message_handler(fight_cmd, commands=['fight', 'battle', 'hunt'])
-    dp.register_message_handler(attack_cmd, commands=['attack', 'hit', 'strike'])
-    dp.register_message_handler(shop_cmd, commands=['shop', 'store', 'market'])
-    dp.register_message_handler(buy_cmd, commands=['buy', 'purchase'])
-    dp.register_message_handler(inventory_cmd, commands=['inventory', 'inv', 'items', 'bag'])
-    dp.register_message_handler(rest_cmd, commands=['rest', 'sleep', 'heal'])
-    dp.register_message_handler(explore_cmd, commands=['explore', 'adventure', 'go'])
-    dp.register_message_handler(quests_cmd, commands=['quests', 'missions', 'tasks'])
+    dp.register_message_handler(start_cmd, commands=['start', 'begin', 'старт'])
+    dp.register_message_handler(help_cmd, commands=['help', 'помощь', 'h'])
+    dp.register_message_handler(stats_cmd, commands=['stats', 'stat', 'характеристики', 'статы'])
+    dp.register_message_handler(fight_cmd, commands=['fight', 'бой', 'битва'])
+    dp.register_message_handler(attack_cmd, commands=['attack', 'атака', 'удар'])
+    dp.register_message_handler(shop_cmd, commands=['shop', 'магазин', 'market'])
+    dp.register_message_handler(buy_cmd, commands=['buy', 'купить'])
+    dp.register_message_handler(inventory_cmd, commands=['inventory', 'inv', 'инвентарь'])
+    dp.register_message_handler(rest_cmd, commands=['rest', 'отдых', 'heal'])
+    dp.register_message_handler(explore_cmd, commands=['explore', 'исследовать', 'поиск'])
+    dp.register_message_handler(quests_cmd, commands=['quests', 'квесты', 'missions', 'tasks'])
     dp.register_message_handler(reward_cmd, commands=['reward', 'claim', 'complete'])
     dp.register_message_handler(feedback_cmd, commands=['feedback', 'review'])
     dp.register_message_handler(clear_feedback_cmd, commands=['clear_feedback'])
