@@ -9,7 +9,19 @@ ENEMIES = [
     {"name": "Гоблин-разбойник", "hp": 25, "min_damage": 3, "max_damage": 10, "xp": 20, "coins": 15},
 ]
 
-
+def attack_turn(attacker_name: str, attacker_damage: int, defender_name: str, defender_hp: int) -> tuple[int, str]:
+    """
+    Один ход атаки.
+    Возвращает (оставшееся HP защитника, текст сообщения).
+    """
+    defender_hp -= attacker_damage
+    message = f"⚔️ {attacker_name} наносит {attacker_damage} урона {defender_name}!\n"
+    if defender_hp <= 0:
+        message += f"💀 {defender_name} повержен!"
+    else:
+        message += f"❤️ У {defender_name} осталось {defender_hp} HP."
+    return defender_hp, message
+    
 def get_random_enemy():
     """Возвращает случайного врага с небольшим разбросом характеристик."""
     enemy = random.choice(ENEMIES).copy()
