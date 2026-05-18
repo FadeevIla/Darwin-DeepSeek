@@ -39,7 +39,7 @@ def fix_missing_imports():
                 f.write("import random\n\n")
                 for func in funcs:
                     f.write(f"def {func}(*args, **kwargs):\n")
-                    f.write(f"    return 'Заглушка {func} — будет улучшено Дарвином'\n\n")
+                    f.write(f"    return f'Заглушка {func} — Дарвин улучшит'\n\n")
             print(f"✅ Создан модуль {module_path} с функциями: {funcs}")
             continue
         
