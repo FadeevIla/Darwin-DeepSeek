@@ -69,7 +69,7 @@ def fix_all_imports():
     # Проверяем модули на импорты из core
     for root, dirs, files in os.walk("core"):
         for file in files:
-            if file.endswith(".py") and file.startswith("rpg_"):
+            if file.endswith(".py"):
                 filepath = os.path.join(root, file)
                 with open(filepath, "r", encoding="utf-8") as f:
                     code = f.read()
