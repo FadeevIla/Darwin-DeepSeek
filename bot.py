@@ -17,6 +17,7 @@ from core.rpg_inventory import get_inventory_text
 from core.rpg_events import rest, explore_event
 from core.rpg_help import START_MESSAGE, HELP_MESSAGE
 from core.feedback import add_feedback, clear_feedback, get_feedback_count
+from core.rpg_quests import get_quest_log, complete_quest_step, get_quest_reward
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -76,8 +77,14 @@ async def attack_cmd(message: types.Message):
     
     if result.get("win"):
         # Враг побеждён
+        enemy_name = p["enemy"]["name"]
         del p["enemy"]
-        await message.reply(result["message"], parse_mode="HTML")
+        # Проверяем квесты на убийство врага
+        quest_message = complete_quest_step(p, f"kill_{enemy_name}")
+        full_message = result["message"]
+        if quest_message:
+            full_message += "\n\n" + quest_message
+        await message.reply(full_message, parse_mode="HTML")
     elif result.get("dead"):
         # Игрок мёртв
         del p["enemy"]
@@ -92,92 +99,108 @@ async def heal_cmd(message: types.Message):
     """Лечение за монеты"""
     p = get_player(players, message.from_user.id)
     
-    if p['hp'] >= p['max_hp']:
+    # Стоимость лечения зависит от уровня
+    heal_cost = 10 + (p["level"] * 5)
+    
+    if p["coins"] < heal_cost:
+        await message.reply(f"❌ Недостаточно монет! Лечение стоит {heal_cost} 🪙.", parse_mode="HTML")
+        return
+    
+    if p["hp"] >= p["max_hp"]:
         await message.reply("❤️ У тебя уже полное здоровье!", parse_mode="HTML")
         return
     
-    heal_cost = 20
-    heal_amount = 30
-    
-    if p['coins'] < heal_cost:
-        await message.reply(f"💔 Недостаточно монет! Нужно {heal_cost} 🪙", parse_mode="HTML")
-        return
-    
-    p['coins'] -= heal_cost
-    p['hp'] = min(p['hp'] + heal_amount, p['max_hp'])
+    # Лечим на 30% от максимального HP
+    heal_amount = int(p["max_hp"] * 0.3)
+    p["hp"] = min(p["hp"] + heal_amount, p["max_hp"])
+    p["coins"] -= heal_cost
     
     await message.reply(
-        f"💚 Ты выпил лечебное зелье!\n"
-        f"❤️ +{heal_amount} HP (теперь {p['hp']}/{p['max_hp']})\n"
-        f"🪙 -{heal_cost} монет",
-        parse_mode="HTML"
+        f"💚 Ты восстановил {heal_amount} HP!\n"
+        f"❤️ {p['hp']}/{p['max_hp']}\n"
+        f"🪙 Потрачено: {heal_cost} монет",
+        parse_mode="HTML",
     )
 
 
 async def shop_cmd(message: types.Message):
-    """Магазин"""
     p = get_player(players, message.from_user.id)
-    shop_text = get_shop_list(p)
-    await message.reply(shop_text, parse_mode="HTML")
+    items = get_shop_list(p)
+    text = "🏪 <b>Магазин:</b>\n\n"
+    for i, item in enumerate(items, 1):
+        text += f"{i}. {item['name']} — {item['price']} 🪙\n"
+        text += f"   {item.get('desc', '')}\n"
+    text += "\n<i>Купить: /buy номер_товара</i>"
+    await message.reply(text, parse_mode="HTML")
 
 
 async def buy_cmd(message: types.Message):
-    """Покупка предмета"""
     p = get_player(players, message.from_user.id)
-    
-    args = message.get_args()
-    if not args:
-        await message.reply("📝 Используй: /buy <название предмета>\nНапример: /buy Меч", parse_mode="HTML")
+    try:
+        item_num = int(message.get_args()) - 1
+    except (ValueError, TypeError):
+        await message.reply("❌ Укажи номер товара из списка /shop", parse_mode="HTML")
         return
     
-    result = buy_item(p, args)
+    result = buy_item(p, item_num)
     await message.reply(result, parse_mode="HTML")
 
 
 async def inventory_cmd(message: types.Message):
-    """Инвентарь"""
     p = get_player(players, message.from_user.id)
-    inv_text = get_inventory_text(p)
-    await message.reply(inv_text, parse_mode="HTML")
+    text = get_inventory_text(p)
+    await message.reply(text, parse_mode="HTML")
 
 
 async def rest_cmd(message: types.Message):
-    """Отдых"""
     p = get_player(players, message.from_user.id)
     result = rest(p)
     await message.reply(result, parse_mode="HTML")
 
 
 async def explore_cmd(message: types.Message):
-    """Исследование"""
     p = get_player(players, message.from_user.id)
     result = explore_event(p)
     await message.reply(result, parse_mode="HTML")
 
 
+async def quests_cmd(message: types.Message):
+    """Просмотр активных квестов"""
+    p = get_player(players, message.from_user.id)
+    quest_log = get_quest_log(p)
+    await message.reply(quest_log, parse_mode="HTML")
+
+
+async def reward_cmd(message: types.Message):
+    """Получить награду за выполненный квест"""
+    p = get_player(players, message.from_user.id)
+    result = get_quest_reward(p)
+    await message.reply(result, parse_mode="HTML")
+
+
 async def feedback_cmd(message: types.Message):
-    """Отзыв"""
-    args = message.get_args()
-    if not args:
-        await message.reply("📝 Используй: /feedback <текст отзыва>", parse_mode="HTML")
+    """Оставить отзыв"""
+    parts = message.get_args().split()
+    if not parts:
+        await message.reply("❌ Укажи отзыв после команды: /feedback отличная игра!", parse_mode="HTML")
         return
-    
-    add_feedback(message.from_user.id, args)
-    await message.reply("✅ Спасибо за отзыв! Он поможет сделать игру лучше.", parse_mode="HTML")
+    user_id = message.from_user.id
+    add_feedback(user_id, message.get_args())
+    await message.reply("✅ Спасибо за отзыв!", parse_mode="HTML")
 
 
 async def clear_feedback_cmd(message: types.Message):
-    """Очистка отзывов"""
+    """Очистить отзывы (только для админа)"""
+    ADMIN_ID = 123456789  # Заменить на реальный ID админа
+    if message.from_user.id != ADMIN_ID:
+        await message.reply("❌ Только администратор может очищать отзывы!", parse_mode="HTML")
+        return
     clear_feedback()
-    await message.reply("🗑️ Все отзывы очищены.", parse_mode="HTML")
+    await message.reply("✅ Отзывы очищены!", parse_mode="HTML")
 
 
 async def unknown_cmd(message: types.Message):
-    """Неизвестная команда"""
-    await message.reply(
-        "🤔 Неизвестная команда. Используй /help для списка команд.",
-        parse_mode="HTML"
-    )
+    await message.reply("❓ Неизвестная команда. Используй /help", parse_mode="HTML")
 
 
 # ============================================================
@@ -185,19 +208,20 @@ async def unknown_cmd(message: types.Message):
 # ============================================================
 
 def register_handlers(dp: Dispatcher):
-    """Регистрация всех обработчиков команд"""
     dp.register_message_handler(start_cmd, commands=['start'])
     dp.register_message_handler(help_cmd, commands=['help'])
-    dp.register_message_handler(stats_cmd, commands=['stats'])
-    dp.register_message_handler(fight_cmd, commands=['fight'])
-    dp.register_message_handler(attack_cmd, commands=['attack'])
-    dp.register_message_handler(heal_cmd, commands=['heal'])
-    dp.register_message_handler(shop_cmd, commands=['shop'])
-    dp.register_message_handler(buy_cmd, commands=['buy'])
-    dp.register_message_handler(inventory_cmd, commands=['inventory'])
-    dp.register_message_handler(rest_cmd, commands=['rest'])
-    dp.register_message_handler(explore_cmd, commands=['explore'])
-    dp.register_message_handler(feedback_cmd, commands=['feedback'])
+    dp.register_message_handler(stats_cmd, commands=['stats', 'profile'])
+    dp.register_message_handler(fight_cmd, commands=['fight', 'search'])
+    dp.register_message_handler(attack_cmd, commands=['attack', 'hit'])
+    dp.register_message_handler(heal_cmd, commands=['heal', 'health'])
+    dp.register_message_handler(shop_cmd, commands=['shop', 'market'])
+    dp.register_message_handler(buy_cmd, commands=['buy', 'purchase'])
+    dp.register_message_handler(inventory_cmd, commands=['inventory', 'bag', 'items'])
+    dp.register_message_handler(rest_cmd, commands=['rest', 'sleep'])
+    dp.register_message_handler(explore_cmd, commands=['explore', 'adventure'])
+    dp.register_message_handler(quests_cmd, commands=['quests', 'missions', 'tasks'])
+    dp.register_message_handler(reward_cmd, commands=['reward', 'claim', 'complete'])
+    dp.register_message_handler(feedback_cmd, commands=['feedback', 'review'])
     dp.register_message_handler(clear_feedback_cmd, commands=['clear_feedback'])
     dp.register_message_handler(unknown_cmd)
 
