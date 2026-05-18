@@ -12,6 +12,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# 🆕 Автофикс импортов перед запуском
+RUN python -c "from core.import_fixer import fix_all_imports; fix_all_imports()"
+
 # Для Web Service - слушаем порт
 EXPOSE 10000
 
