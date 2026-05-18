@@ -96,26 +96,20 @@ async def heal_cmd(message: types.Message):
         await message.reply("❤️ У тебя уже полное здоровье!", parse_mode="HTML")
         return
     
-    heal_cost = 20 + (p['level'] * 5)
+    heal_cost = 20
+    heal_amount = 30
     
     if p['coins'] < heal_cost:
-        await message.reply(
-            f"❌ Недостаточно монет! Лечение стоит {heal_cost} 🪙, у тебя только {p['coins']}.",
-            parse_mode="HTML"
-        )
+        await message.reply(f"💔 Недостаточно монет! Нужно {heal_cost} 🪙", parse_mode="HTML")
         return
     
-    # Случайное количество восстанавливаемого HP
-    import random
-    heal_amount = random.randint(20, 50) + (p['level'] * 2)
-    
     p['coins'] -= heal_cost
-    p['hp'] = min(p['max_hp'], p['hp'] + heal_amount)
+    p['hp'] = min(p['hp'] + heal_amount, p['max_hp'])
     
     await message.reply(
-        f"💊 Ты выпил зелье восстановления!\n"
+        f"💚 Ты выпил лечебное зелье!\n"
         f"❤️ +{heal_amount} HP (теперь {p['hp']}/{p['max_hp']})\n"
-        f"🪙 Потрачено: {heal_cost} монет",
+        f"🪙 -{heal_cost} монет",
         parse_mode="HTML"
     )
 
@@ -131,19 +125,12 @@ async def buy_cmd(message: types.Message):
     """Покупка предмета"""
     p = get_player(players, message.from_user.id)
     
-    # Получаем название предмета из команды
     args = message.get_args()
     if not args:
-        await message.reply(
-            "❌ Укажи предмет для покупки!\n"
-            "Пример: /buy Меч",
-            parse_mode="HTML"
-        )
+        await message.reply("📝 Используй: /buy <название предмета>\nНапример: /buy Меч", parse_mode="HTML")
         return
     
-    item_name = args.strip()
-    result = buy_item(p, item_name)
-    
+    result = buy_item(p, args)
     await message.reply(result, parse_mode="HTML")
 
 
@@ -172,40 +159,23 @@ async def feedback_cmd(message: types.Message):
     """Отзыв"""
     args = message.get_args()
     if not args:
-        await message.reply(
-            "📝 Напиши свой отзыв после команды!\n"
-            "Пример: /feedback Классная игра!",
-            parse_mode="HTML"
-        )
+        await message.reply("📝 Используй: /feedback <текст отзыва>", parse_mode="HTML")
         return
     
-    feedback_text = args.strip()
-    add_feedback(message.from_user.id, feedback_text)
-    
-    await message.reply(
-        "✅ Спасибо за отзыв! Мы ценим твоё мнение.",
-        parse_mode="HTML"
-    )
+    add_feedback(message.from_user.id, args)
+    await message.reply("✅ Спасибо за отзыв! Он поможет сделать игру лучше.", parse_mode="HTML")
 
 
 async def clear_feedback_cmd(message: types.Message):
     """Очистка отзывов"""
-    count = get_feedback_count()
-    if count == 0:
-        await message.reply("📭 Нет отзывов для очистки.", parse_mode="HTML")
-        return
-    
     clear_feedback()
-    await message.reply(
-        f"🗑️ Очищено {count} отзывов.",
-        parse_mode="HTML"
-    )
+    await message.reply("🗑️ Все отзывы очищены.", parse_mode="HTML")
 
 
 async def unknown_cmd(message: types.Message):
     """Неизвестная команда"""
     await message.reply(
-        "❓ Неизвестная команда. Используй /help для списка команд.",
+        "🤔 Неизвестная команда. Используй /help для списка команд.",
         parse_mode="HTML"
     )
 
