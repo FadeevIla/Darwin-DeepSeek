@@ -46,6 +46,10 @@ def get_feedback_summary() -> str:
         lines.append(f"- [{msg['author']}] {msg['text']}")
     return "\n".join(lines)
 
+def get_feedback_count() -> int:
+    """Возвращает количество необработанных сообщений."""
+    messages = load_feedback()
+    return len(messages)
 
 def clear_feedback():
     """Очищает все сообщения."""
