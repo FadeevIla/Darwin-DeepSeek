@@ -5,9 +5,10 @@
 name: Run Darwin Bot
 
 on:
-  schedule:
-    - cron: '0 */3 * * *'  # каждые 3 часа (запасной)
-  workflow_dispatch:         # ручной запуск для тестов
+  # schedule ЗАКОММЕНТИРОВАН — Render основной хостинг
+  # schedule:
+  #   - cron: '0 */3 * * *'
+  workflow_dispatch:  # только ручной запуск для тестов
 
 permissions:
   contents: write
