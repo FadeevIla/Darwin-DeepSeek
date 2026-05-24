@@ -100,6 +100,44 @@ class DarwinOrchestrator:
             "heartbeat"
         )
 
+    def _sync_feedback(self):
+        """Сохраняет feedback.json в репозиторий (если есть локальные изменения)."""
+        import json
+
+        if not os.path.exists("feedback.json"):
+            return
+
+        with open("feedback.json", "r", encoding="utf-8") as f:
+            local_feedback = json.load(f)
+
+        if not local_feedback:
+            return
+
+        # Пушим в репозиторий
+        try:
+            content = json.dumps(local_feedback, ensure_ascii=False, indent=2)
+            blob = self.github.repo.create_git_blob(content, "utf-8")
+            ref = self.github.repo.get_git_ref("heads/main")
+            base_commit = self.github.repo.get_git_commit(ref.object.sha)
+
+            element = InputGitTreeElement(
+                path="feedback.json",
+                mode='100644',
+                type='blob',
+                sha=blob.sha
+            )
+
+            new_tree = self.github.repo.create_git_tree([element], base_commit.tree)
+            new_commit = self.github.repo.create_git_commit(
+                message="📝 Обновлён feedback.json с сервера",
+                tree=new_tree,
+                parents=[base_commit]
+            )
+            ref.edit(sha=new_commit.sha)
+            self.logger.info("📝 feedback.json запушен в репозиторий")
+        except Exception as e:
+            self.logger.warning(f"Не удалось запушить feedback.json: {e}")
+
     def _describe_changes(self, old_code: str, new_code: str) -> str:
         """Просит LLM описать изменения понятным языком."""
         try:
@@ -222,6 +260,12 @@ class DarwinOrchestrator:
             self.logger.critical(f"Ошибка загрузки: {e}")
             self.notifier.send(f"💥 Критическая ошибка загрузки: {str(e)[:200]}", "error")
             return False
+
+        # Синхронизируем feedback.json с репозиторием
+        try:
+            self._sync_feedback()
+        except Exception as e:
+            self.logger.warning(f"Не удалось синхронизировать фидбек: {e}")
 
         # --- Шаг 2: Поиск и исправление багов ---
         try:

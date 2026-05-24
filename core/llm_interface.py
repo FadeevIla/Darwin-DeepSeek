@@ -20,33 +20,35 @@ class LLMInterface:
         feedback = get_feedback_summary()
 
         system_prompt = (
-            "Ты — senior Python-разработчик. Исправь баги в коде RPG 'Уроборос'.\n\n"
-            "АРХИТЕКТУРА (актуальная):\n"
-            "- bot.py — регистрация команд в register_handlers(dp) + НОВЫЕ команды\n"
-            "- core/rpg_player.py — игрок (характеристики, уровень)\n"
-            "- core/rpg_combat.py — бой (attack_turn, get_random_enemy, fight_result)\n"
-            "- core/rpg_shop.py — магазин (get_shop_list, buy_item)\n"
-            "- core/rpg_inventory.py — инвентарь\n"
-            "- core/rpg_events.py — отдых (rest) + explore_event\n"
-            "- core/rpg_quests.py — квесты (get_quest_log, complete_quest_step, get_quest_reward)\n"
-            "- core/rpg_help.py — START_MESSAGE, HELP_MESSAGE, get_help_text\n"
-            "- core/feedback.py — фидбек (add_feedback, clear_feedback, get_feedback_count)\n\n"
-            "ПРИ ДОБАВЛЕНИИ НОВЫХ КОМАНД ВСЕГДА ОБНОВЛЯЙ:\n"
-            "1. rpg_help.py → HELP_MESSAGE (добавь описание новой команды)\n"
-            "2. rpg_help.py → START_MESSAGE (если нужно)\n"
-            "3. bot.py → register_handlers (регистрация команды)\n"
-            "4. bot.py → импорты (если новый модуль)\n\n"
+            "Ты — senior Python-разработчик. Исправь баги в коде 'Тамагочи-Арены'.\n\n"
+            "АРХИТЕКТУРА: монолитный bot.py (все функции в одном файле).\n"
+            "Данные хранятся в arena.json через load_arena()/save_arena().\n\n"
+            "ИГРОВЫЕ ФУНКЦИИ (которые нужно чинить и улучшать):\n"
+            "- start_cmd — приветствие и показ питомца\n"
+            "- egg_cmd — получение яйца\n"
+            "- incubate_cmd — высиживание яйца (3 раза)\n"
+            "- feed_cmd — кормление питомца\n"
+            "- train_cmd — тренировка (растут статы, падает голод)\n"
+            "- battle_cmd — битва с другим игроком или ботом\n"
+            "- top_cmd — таблица лидеров\n"
+            "- stats_cmd — статистика питомца\n"
+            "- help_cmd — справка\n"
+            "- report_cmd — фидбек от админа\n\n"
             "ЧТО ДЕЛАТЬ:\n"
-            "1. Найди ВСЕ баги и синтаксические ошибки\n"
-            "2. Верни ИСПРАВЛЕННЫЙ файл ЦЕЛИКОМ\n"
-            "3. Если команда-заглушка — сделай полноценную\n"
-            f"4. ПОЖЕЛАНИЯ: {feedback}\n"
-            "5. После обработки: core.feedback.clear_feedback()\n\n"
+            "1. Найди ВСЕ баги и синтаксические ошибки в КОНКРЕТНОЙ функции\n"
+            "2. Верни ТОЛЬКО исправленную функцию ЦЕЛИКОМ (не весь файл!)\n"
+            "3. Сохрани сигнатуру (async def, аргументы) и все обращения к arena\n"
+            "4. Если функция-заглушка — сделай полноценную с вариативностью\n"
+            f"5. ПОЖЕЛАНИЯ ИГРОКОВ (учти их):\n{feedback}\n"
+            "6. После обработки: core.feedback.clear_feedback()\n\n"
             "КРИТИЧЕСКИ ВАЖНО:\n"
-            "- Верни ТОЛЬКО изменённый файл ЦЕЛИКОМ\n"
-            "- НЕ оборачивай в ```. Первая строка — import.\n"
-            "- НЕ сокращай код.\n"
-            "- ВСЕ HTML-теги должны быть валидными (никаких <function>, <bound method>)"
+            "- Верни ТОЛЬКО одну функцию (от async def до return/конца)\n"
+            "- НЕ меняй другие функции\n"
+            "- НЕ оборачивай в ```. Первая строка — async def.\n"
+            "- Все HTML-теги валидны (никаких <function>, <bound method>)\n"
+            "- Все reply_text замени на reply\n"
+            "- НЕ добавляй новые функции без необходимости\n"
+            "- Используй load_arena()/save_arena() для работы с данными"
         )
         return self._call(code, system_prompt, temperature=0.2)
 
@@ -56,55 +58,58 @@ class LLMInterface:
         weekday = datetime.now().weekday()
 
         base_prompt = (
-            "Ты — разработчик RPG 'Уроборос' на aiogram 2.25.1.\n\n"
-            "АРХИТЕКТУРА (актуальная):\n"
-            "- bot.py — регистрация команд в register_handlers(dp)\n"
-            "- core/rpg_player.py — игрок\n"
-            "- core/rpg_combat.py — бой (attack_turn)\n"
-            "- core/rpg_shop.py — магазин\n"
-            "- core/rpg_inventory.py — инвентарь\n"
-            "- core/rpg_events.py — отдых, explore_event\n"
-            "- core/rpg_quests.py — квесты\n"
-            "- core/rpg_help.py — START_MESSAGE, HELP_MESSAGE, get_help_text\n"
-            "- core/feedback.py — фидбек\n\n"
-            "ПРИ ДОБАВЛЕНИИ НОВЫХ КОМАНД ВСЕГДА ОБНОВЛЯЙ:\n"
-            "1. rpg_help.py → HELP_MESSAGE (добавь описание новой команды)\n"
-            "2. rpg_help.py → START_MESSAGE (если нужно)\n"
-            "3. bot.py → register_handlers (регистрация команды)\n"
-            "4. bot.py → импорты (если новый модуль)\n\n"
-            "ПРАВИЛА:\n"
-            "- НОВАЯ механика → новый файл core/rpg_NAME.py + обнови bot.py И rpg_help.py\n"
-            "- УЛУЧШЕНИЕ → меняй ТОЛЬКО один модуль\n"
-            "- ВСЕГДА возвращай изменённый файл ЦЕЛИКОМ\n"
-            "- НЕ оборачивай в ```. Первая строка — import.\n"
-            "- НЕ сокращай код.\n"
-            "- ВСЕ HTML-теги валидны (никаких <function>)\n"
-            "- from core.health_server import start_health_server ВСЕГДА в bot.py\n"
-            "- start_health_server() ВСЕГДА в main\n\n"
+            "Ты — разработчик игры 'Тамагочи-Арена: Уроборос' на aiogram 2.25.1.\n"
+            "Игроки выращивают питомцев из яиц и сражаются на арене.\n\n"
+            "АРХИТЕКТУРА: монолитный bot.py (все функции в одном файле).\n"
+            "Данные: arena.json через load_arena()/save_arena().\n\n"
+            "СУЩЕСТВУЮЩИЕ ФУНКЦИИ (выбери ОДНУ для улучшения):\n"
+            "- egg_cmd — получение яйца (простая выдача)\n"
+            "- incubate_cmd — высиживание (счётчик до 3)\n"
+            "- feed_cmd — кормление (восстанавливает голод/HP/настроение)\n"
+            "- train_cmd — тренировка (случайный стат +1-3)\n"
+            "- battle_cmd — битва с ботом или игроком (сравнение силы)\n"
+            "- top_cmd — таблица лидеров (сортировка по победам)\n"
+            "- stats_cmd — статистика питомца\n"
+            "- start_cmd — приветствие с информацией о питомце\n\n"
+            "ПРАВИЛА УЛУЧШЕНИЯ:\n"
+            "- Выбери ОДНУ функцию и СУЩЕСТВЕННО улучши её\n"
+            "- Добавь вариативность (random.choice, несколько исходов)\n"
+            "- Добавь визуальные эффекты (эмодзи, HTML-форматирование)\n"
+            "- Улучшение должно быть заметным игроку (не просто +1 строка)\n"
+            "- Минимум 20 строк нового/изменённого кода\n\n"
+            "КРИТИЧЕСКИ ВАЖНО:\n"
+            "- Верни ТОЛЬКО изменённую функцию ЦЕЛИКОМ (не весь файл!)\n"
+            "- Сохрани сигнатуру: async def имя(message: types.Message):\n"
+            "- Сохрани работу с arena: load_arena()/save_arena()\n"
+            "- НЕ ломай другие функции\n"
+            "- НЕ меняй register_message_handler\n"
+            "- НЕ оборачивай в ```. Первая строка — async def.\n"
+            "- Все HTML-теги валидны\n"
+            "- Заменяй reply_text на reply\n"
+            "- НЕ добавляй новые функции (только улучшай существующие)\n\n"
         )
 
         if weekday == 6:
             system_prompt = base_prompt + (
                 "ВОСКРЕСЕНЬЕ — рефакторинг.\n"
-                "Исправь ВСЕ баги. Удали мёртвый код. Оптимизируй.\n"
-                "Верни ИСПРАВЛЕННЫЙ файл ЦЕЛИКОМ.\n"
-                "НЕ добавляй новые механики."
+                "Выбери функцию с багами и исправь их.\n"
+                "Улучши читаемость кода, добавь комментарии.\n"
+                "Верни ТОЛЬКО исправленную функцию."
             )
         elif weekday in (0, 2, 4):
             system_prompt = base_prompt + (
                 "ПОНЕДЕЛЬНИК/СРЕДА/ПЯТНИЦА — улучшение.\n"
-                "Выбери ОДИН модуль и СУЩЕСТВЕННО улучши его (минимум 30 строк).\n"
-                "Верни изменённый модуль ЦЕЛИКОМ.\n"
-                "НЕ создавай новые файлы."
+                "Выбери функцию, которая кажется самой скучной, и СДЕЛАЙ ЕЁ ИНТЕРЕСНОЙ.\n"
+                "Добавь: случайные события, разные исходы, эмодзи, юмор.\n"
+                "Верни ТОЛЬКО улучшенную функцию."
             )
         else:
             system_prompt = base_prompt + (
-                "ВТОРНИК/ЧЕТВЕРГ/СУББОТА — инновация.\n"
-                "Создай ОДИН новый модуль core/rpg_NAME.py с НОВОЙ механикой (минимум 40 строк).\n"
-                "Обнови bot.py: импорт + register_handlers.\n"
-                "Обнови rpg_help.py: добавь команду в HELP_MESSAGE.\n"
-                "Верни: (1) НОВЫЙ модуль, (2) bot.py, (3) rpg_help.py.\n"
-                "Раздели ответ метками: ###MODULE###, ###BOT_PY###, ###HELP###"
+                "ВТОРНИК/ЧЕТВЕРГ/СУББОТА — углубление.\n"
+                "Выбери функцию и добавь в неё НОВУЮ МЕХАНИКУ.\n"
+                "Например: в battle добавь магические способности, в feed — отравление,\n"
+                "в train — мини-игру (угадай число для бонуса).\n"
+                "Верни ТОЛЬКО улучшенную функцию."
             )
 
         return self._call(code, system_prompt, temperature=1.0)
@@ -126,10 +131,10 @@ class LLMInterface:
                         model=model,
                         messages=[
                             {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": f"Файл для изменения:\n\n{code}"},
+                            {"role": "user", "content": f"Функция для улучшения:\n\n{code}"},
                         ],
                         temperature=temperature,
-                        max_tokens=4000,
+                        max_tokens=3000,
                     )
                     result = self._clean(chat.choices[0].message.content)
                     tokens = chat.usage.total_tokens if hasattr(chat, "usage") else "?"
@@ -155,6 +160,6 @@ class LLMInterface:
             cleaned = "\n".join(lines)
         lines = [l for l in cleaned.split("\n") if l.strip() != "```"]
         for i, line in enumerate(lines):
-            if line.strip().startswith(("import ", "from ", "#!", "async def ", "def ", "class ")):
+            if line.strip().startswith(("async def ", "def ", "import ", "from ")):
                 return "\n".join(lines[i:])
         return "\n".join(lines)

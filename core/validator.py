@@ -51,33 +51,9 @@ class Validator:
                 return False, f"Обнаружен опасный вызов: {danger}"
 
         # 🆕 Проверка: все импорты из core.rpg_* должны существовать
-        import_lines = [l for l in code.split('\n') if l.strip().startswith('from core.rpg_')]
-        for line in import_lines:
-            # Извлекаем имена функций: from core.rpg_combat import func1, func2
-            parts = line.split('import')
-            if len(parts) == 2:
-                module_name = parts[0].replace('from ', '').strip()
-                funcs = [f.strip() for f in parts[1].split(',')]
-                
-                # Проверяем, существует ли файл модуля
-                module_path = module_name.replace('.', '/') + '.py'
-                if not os.path.exists(module_path):
-                    return False, f"Модуль {module_name} не найден"
-                
-                # Проверяем, существуют ли функции в модуле
-                try:
-                    with open(module_path, 'r') as f:
-                        module_code = f.read()
-                    for func in funcs:
-                        if f"def {func}(" not in module_code:
-                            self.logger.warning(f"Функция {func} не найдена в {module_path} — автодобавление")
-                            # Автоматически добавляем заглушку
-                            with open(module_path, 'a') as f:
-                                f.write(f"\n\n# Auto-generated stub\ndef {func}(*args, **kwargs):\n    return 'Заглушка {func} — будет улучшено'\n")
-                except Exception as e:
-                    self.logger.warning(f"Ошибка проверки модуля {module_path}: {e}")
-    
-        return True, None
+        # Проверяем, что код — это функция (начинается с async def)
+        if not code.strip().startswith(('async def ', 'def ', 'import ', 'from ')):
+            return False, "Код не начинается с функции или импорта"
 
     def validate_pyflakes(self, code):
         try:
