@@ -7,6 +7,12 @@ import random
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
+from supabase import create_client, Client
+
+# Supabase конфигурация
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -25,19 +31,85 @@ ARENA_FILE = "arena.json"
 
 
 # ============================================================
-# БАЗА ДАННЫХ
+# БАЗА ДАННЫХ (Supabase)
 # ============================================================
 
-def load_arena():
-    if not os.path.exists(ARENA_FILE):
-        return {"players": {}}
-    with open(ARENA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+def get_player(uid: str) -> dict:
+    """Получает данные игрока из Supabase."""
+    if not supabase:
+        return None
+    try:
+        response = supabase.table("players").select("*").eq("user_id", int(uid)).execute()
+        if response.data:
+            return response.data[0]
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка загрузки игрока: {e}")
+        return None
 
+def create_player(uid: str) -> dict:
+    """Создаёт нового игрока в Supabase."""
+    if not supabase:
+        return None
+    pet = random_pet()
+    player_data = {
+        "user_id": int(uid),
+        "pet_name": pet["name"],
+        "pet_emoji": pet["emoji"],
+        "hp": pet["hp"],
+        "max_hp": pet["max_hp"],
+        "strength": pet["strength"],
+        "agility": pet["agility"],
+        "magic": pet["magic"],
+        "defense": pet["defense"],
+        "speed": pet["speed"],
+        "hunger": pet["hunger"],
+        "mood": pet["mood"],
+        "level": pet["level"],
+        "xp": pet["xp"],
+        "wins": pet["wins"],
+        "losses": pet["losses"],
+    }
+    try:
+        supabase.table("players").insert(player_data).execute()
+        return player_data
+    except Exception as e:
+        logger.error(f"Ошибка создания игрока: {e}")
+        return None
 
-def save_arena(data):
-    with open(ARENA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def update_player(uid: str, data: dict):
+    """Обновляет данные игрока в Supabase."""
+    if not supabase:
+        return
+    try:
+        supabase.table("players").update(data).eq("user_id", int(uid)).execute()
+    except Exception as e:
+        logger.error(f"Ошибка обновления игрока: {e}")
+
+def get_top_players(limit: int = 10) -> list:
+    """Возвращает топ игроков по победам."""
+    if not supabase:
+        return []
+    try:
+        response = supabase.table("players").select("*").order("wins", desc=True).limit(limit).execute()
+        return response.data
+    except Exception as e:
+        logger.error(f"Ошибка загрузки топа: {e}")
+        return []
+
+def get_random_opponent(uid: str) -> dict:
+    """Находит случайного соперника для битвы."""
+    if not supabase:
+        return None
+    try:
+        response = supabase.table("players").select("*").neq("user_id", int(uid)).execute()
+        if response.data:
+            import random
+            return random.choice(response.data)
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка поиска соперника: {e}")
+        return None
 
 
 # ============================================================
@@ -77,18 +149,17 @@ def random_pet():
 # ============================================================
 
 async def start_cmd(message: types.Message):
-    arena = load_arena()
     uid = str(message.from_user.id)
+    player = get_player(uid)
 
-    if uid in arena["players"] and arena["players"][uid].get("pet"):
-        pet = arena["players"][uid]["pet"]
+    if player:
         await message.reply(
             f"🐉 <b>УРОБОРОС: АРЕНА</b>\n\n"
-            f"Твой питомец: {pet.get('emoji', '❓')} <b>{pet.get('name', 'Неизвестный')}</b>\n"
-            f"❤️ HP: {pet.get('hp', 0)}/{pet.get('max_hp', 100)}\n"
-            f"⭐ Уровень: {pet.get('level', 1)}\n"
-            f"🍗 Голод: {pet.get('hunger', 0)}/100\n"
-            f"😊 Настроение: {pet.get('mood', 0)}/100\n\n"
+            f"Твой питомец: {player.get('pet_emoji', '❓')} <b>{player.get('pet_name', 'Неизвестный')}</b>\n"
+            f"❤️ HP: {player.get('hp', 0)}/{player.get('max_hp', 100)}\n"
+            f"⭐ Уровень: {player.get('level', 1)}\n"
+            f"🍗 Голод: {player.get('hunger', 0)}/100\n"
+            f"😊 Настроение: {player.get('mood', 0)}/100\n\n"
             f"/feed — Покормить\n"
             f"/train — Тренировать\n"
             f"/battle — На арену!\n"
@@ -106,27 +177,45 @@ async def start_cmd(message: types.Message):
 
 
 async def egg_cmd(message: types.Message):
-    arena = load_arena()
     uid = str(message.from_user.id)
+    player = get_player(uid)
 
-    if uid not in arena["players"]:
-        arena["players"][uid] = {}
-
-    if arena["players"][uid].get("pet"):
+    if player:
         await message.reply("У тебя уже есть питомец! Используй /start.")
         return
 
-    arena["players"][uid]["egg"] = {
-        "created": datetime.now(timezone.utc).isoformat(),
-        "incubated": False,
-    }
-    save_arena(arena)
+    player = create_player(uid)
+    if player:
+        await message.reply(
+            "🥚 <b>Яйцо получено!</b>\n\n"
+            f"Из него вылупился: {player['pet_emoji']} <b>{player['pet_name']}</b>!\n\n"
+            f"Теперь расти его! /feed и /train",
+            parse_mode="HTML"
+        )
+    else:
+        await message.reply("❌ Ошибка при создании питомца. Попробуй позже.")
+
+
+async def stats_cmd(message: types.Message):
+    uid = str(message.from_user.id)
+    player = get_player(uid)
+
+    if not player:
+        await message.reply("У тебя нет питомца! Напиши /egg.")
+        return
 
     await message.reply(
-        "🥚 <b>Яйцо получено!</b>\n\n"
-        "Теперь его нужно высиживать!\n"
-        "Напиши /incubate чтобы согреть яйцо.\n"
-        "Нужно сделать это 3 раза, чтобы вылупился питомец.",
+        f"📊 <b>{player['pet_emoji']} {player['pet_name']}</b>\n"
+        f"⭐ Уровень: {player['level']} ({player['xp']}/{player['level'] * 50} XP)\n"
+        f"❤️ HP: {player['hp']}/{player['max_hp']}\n"
+        f"⚡ Сила: {player['strength']}\n"
+        f"💨 Ловкость: {player['agility']}\n"
+        f"🔮 Магия: {player['magic']}\n"
+        f"🛡️ Защита: {player['defense']}\n"
+        f"💫 Скорость: {player['speed']}\n"
+        f"🍗 Голод: {player['hunger']}/100\n"
+        f"😊 Настроение: {player['mood']}/100\n"
+        f"🏆 Победы: {player['wins']} | 💀 Поражения: {player['losses']}",
         parse_mode="HTML"
     )
 
@@ -175,26 +264,73 @@ async def incubate_cmd(message: types.Message):
 
 
 async def feed_cmd(message: types.Message):
-    arena = load_arena()
     uid = str(message.from_user.id)
+    player = get_player(uid)
 
-    if uid not in arena["players"] or "pet" not in arena["players"][uid]:
+    if not player:
         await message.reply("У тебя нет питомца! Напиши /egg.")
         return
 
-    pet = arena["players"][uid]["pet"]
-    pet["hunger"] = min(100, pet["hunger"] + random.randint(20, 40))
-    pet["mood"] = min(100, pet["mood"] + random.randint(5, 15))
-    pet["hp"] = min(pet["max_hp"], pet["hp"] + random.randint(5, 15))
+    new_hunger = min(100, player["hunger"] + random.randint(20, 40))
+    new_mood = min(100, player["mood"] + random.randint(5, 15))
+    new_hp = min(player["max_hp"], player["hp"] + random.randint(5, 15))
 
-    save_arena(arena)
+    update_player(uid, {"hunger": new_hunger, "mood": new_mood, "hp": new_hp})
 
     food = random.choice(["🍗 курицу", "🍎 яблоко", "🐟 рыбу", "🍖 мясо", "🧪 зелье"])
     await message.reply(
         f"🍽 Ты покормил питомца: {food}!\n"
-        f"🍗 Голод: {pet['hunger']}/100\n"
-        f"😊 Настроение: {pet['mood']}/100\n"
-        f"❤️ HP: {pet['hp']}/{pet['max_hp']}",
+        f"🍗 Голод: {new_hunger}/100\n"
+        f"😊 Настроение: {new_mood}/100\n"
+        f"❤️ HP: {new_hp}/{player['max_hp']}",
+        parse_mode="HTML"
+    )
+
+
+async def train_cmd(message: types.Message):
+    uid = str(message.from_user.id)
+    player = get_player(uid)
+
+    if not player:
+        await message.reply("У тебя нет питомца! Напиши /egg.")
+        return
+
+    trainings = ["strength", "agility", "magic", "defense", "speed"]
+    stat = random.choice(trainings)
+    boost = random.randint(1, 3)
+
+    new_data = {
+        stat: player[stat] + boost,
+        "xp": player["xp"] + random.randint(10, 30),
+        "hunger": max(0, player["hunger"] - random.randint(10, 25)),
+        "mood": max(0, player["mood"] - random.randint(5, 10)),
+    }
+
+    # Уровень
+    if new_data["xp"] >= player["level"] * 50:
+        new_data["level"] = player["level"] + 1
+        new_data["xp"] = 0
+        new_data["max_hp"] = player["max_hp"] + 15
+        new_data["hp"] = new_data["max_hp"]
+        new_data["strength"] = player["strength"] + boost + 2
+        new_data["agility"] = player["agility"] + boost + 2
+        new_data["magic"] = player["magic"] + boost + 2
+        new_data["defense"] = player["defense"] + boost + 2
+        new_data["speed"] = player["speed"] + boost + 2
+        level_up = " 🎉 УРОВЕНЬ ПОВЫШЕН!"
+    else:
+        level_up = ""
+
+    update_player(uid, new_data)
+
+    stat_names = {"strength": "⚡ Сила", "agility": "💨 Ловкость", "magic": "🔮 Магия", "defense": "🛡️ Защита",
+                  "speed": "💫 Скорость"}
+    await message.reply(
+        f"🏋️ Тренировка завершена!\n"
+        f"{stat_names[stat]}: +{boost}\n"
+        f"✨ Опыт: {new_data['xp']}/{player['level'] * 50}\n"
+        f"🍗 Голод: {new_data['hunger']}/100\n"
+        f"😊 Настроение: {new_data['mood']}/100{level_up}",
         parse_mode="HTML"
     )
 
@@ -301,26 +437,57 @@ async def battle_cmd(message: types.Message):
 
 
 async def top_cmd(message: types.Message):
-    arena = load_arena()
+    players = get_top_players(10)
 
-    # Сортируем по победам
-    ranked = []
-    for uid, data in arena["players"].items():
-        if "pet" in data:
-            pet = data["pet"]
-            ranked.append((uid, pet["name"], pet["emoji"], pet["wins"], pet["losses"], pet["level"]))
-
-    ranked.sort(key=lambda x: x[3], reverse=True)
-
-    if not ranked:
+    if not players:
         await message.reply("Пока никто не участвовал в битвах!")
         return
 
     lines = ["🏆 <b>ТАБЛИЦА ЛИДЕРОВ</b>\n"]
-    for i, (uid, name, emoji, wins, losses, level) in enumerate(ranked[:10], 1):
-        lines.append(f"{i}. {emoji} {name} — {wins}W/{losses}L, lvl {level}")
+    for i, p in enumerate(players, 1):
+        lines.append(f"{i}. {p.get('pet_emoji', '❓')} {p['pet_name']} — {p['wins']}W/{p['losses']}L, lvl {p['level']}")
 
     await message.reply("\n".join(lines), parse_mode="HTML")
+
+
+async def battle_cmd(message: types.Message):
+    uid = str(message.from_user.id)
+    player = get_player(uid)
+
+    if not player:
+        await message.reply("У тебя нет питомца! Напиши /egg.")
+        return
+
+    # Ищем реального соперника в Supabase
+    opponent = get_random_opponent(uid)
+
+    if opponent:
+        # PvP битва с реальным игроком
+        my_power = player["strength"] + player["agility"] + player["level"] * 5
+        opp_power = opponent["strength"] + opponent["agility"] + opponent["level"] * 5
+
+        if my_power >= opp_power:
+            update_player(uid, {"wins": player["wins"] + 1, "xp": player["xp"] + 50})
+            update_player(str(opponent["user_id"]), {"losses": opponent["losses"] + 1})
+            result = f"⚔️ Победа над {opponent['pet_emoji']} {opponent['pet_name']}!\n+50 XP"
+        else:
+            update_player(uid, {"losses": player["losses"] + 1, "hp": max(1, player["hp"] - 25)})
+            update_player(str(opponent["user_id"]), {"wins": opponent["wins"] + 1})
+            result = f"💔 Поражение от {opponent['pet_emoji']} {opponent['pet_name']}...\n-25 HP"
+    else:
+        # Бой с ботом (если нет других игроков)
+        bot_pet = random_pet()
+        my_power = player["strength"] + player["agility"] + player["level"] * 5
+        bot_power = bot_pet["strength"] + bot_pet["agility"] + bot_pet["level"] * 3
+
+        if my_power >= bot_power:
+            update_player(uid, {"wins": player["wins"] + 1, "xp": player["xp"] + 30})
+            result = f"⚔️ Победа над {bot_pet['emoji']} диким {bot_pet['name']}!\n+30 XP"
+        else:
+            update_player(uid, {"losses": player["losses"] + 1, "hp": max(1, player["hp"] - 20)})
+            result = f"💔 Поражение от {bot_pet['emoji']} дикого {bot_pet['name']}...\n-20 HP"
+
+    await message.reply(result, parse_mode="HTML")
 
 
 async def help_cmd(message: types.Message):
