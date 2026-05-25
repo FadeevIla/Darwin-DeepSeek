@@ -177,25 +177,125 @@ async def start_cmd(message: types.Message):
 
 
 async def egg_cmd(message: types.Message):
+    """Улучшенная команда получения яйца с вариативностью"""
     uid = str(message.from_user.id)
-    player = get_player(uid)
-
-    if player:
-        await message.reply("У тебя уже есть питомец! Используй /start.")
-        return
-
-    player = create_player(uid)
-    if player:
-        await message.reply(
-            "🥚 <b>Яйцо получено!</b>\n\n"
-            f"Из него вылупился: {player['pet_emoji']} <b>{player['pet_name']}</b>!\n\n"
-            f"Теперь расти его! /feed и /train",
-            parse_mode="HTML"
-        )
-    else:
-        await message.reply("❌ Ошибка при создании питомца. Попробуй позже.")
-
-
+    arena = load_arena()
+    player = arena["players"].get(uid)
+    
+    # Если у игрока уже есть питомец
+    if player and player.get("pet_name"):
+        out = []
+        emojis = ["🥚", "🧬", "🪺", "✨"]
+        for e in emojis:
+            out.append(f"{e} У тебя уже есть питомец!")
+            out.append(f"{e} Сначала избавься от старого!")
+        out.append("")
+        
+        # Случайный юмор
+        jokes = [
+            "Яйца не бесконечны, знаешь ли!",
+            "Твой карман трещит по швам от яиц!",
+            "Хватит уже коллекционировать!",
+            "Ты что, фермер-миллионер?"
+        ]
+        out.append(f"🤣 {random.choice(jokes)}")
+        return await message.reply("\n".join(out))
+    
+    # Разные типы яиц
+    eggs = [
+        {"type": "обычное", "emoji": "🥚", "chance": 50, "color": "белое"},
+        {"type": "золотое", "emoji": "🥚✨", "chance": 20, "color": "золотое"},
+        {"type": "огненное", "emoji": "🥚🔥", "chance": 15, "color": "огненное"},
+        {"type": "ледяное", "emoji": "🥚❄️", "chance": 10, "color": "ледяное"},
+        {"type": "космическое", "emoji": "🥚🌌", "chance": 5, "color": "звёздное"}
+    ]
+    
+    # Выбор яйца по весу
+    weights = [e["chance"] for e in eggs]
+    chosen = random.choices(eggs, weights=weights, k=1)[0]
+    
+    # Создание питомца с характеристиками в зависимости от яйца
+    stats_mod = {
+        "обычное": {"hp": 100, "strength": 10, "agility": 10, "magic": 10, "defense": 10, "speed": 10},
+        "золотое": {"hp": 120, "strength": 15, "agility": 15, "magic": 15, "defense": 15, "speed": 15},
+        "огненное": {"hp": 110, "strength": 20, "agility": 10, "magic": 18, "defense": 8, "speed": 14},
+        "ледяное": {"hp": 130, "strength": 8, "agility": 12, "magic": 22, "defense": 20, "speed": 8},
+        "космическое": {"hp": 100, "strength": 25, "agility": 20, "magic": 25, "defense": 15, "speed": 20}
+    }
+    
+    base = stats_mod[chosen["type"]]
+    
+    player = {
+        "pet_name": f"Питомец из {chosen['type']} яйца",
+        "pet_emoji": chosen["emoji"],
+        "hp": base["hp"],
+        "max_hp": base["hp"],
+        "strength": base["strength"],
+        "agility": base["agility"],
+        "magic": base["magic"],
+        "defense": base["defense"],
+        "speed": base["speed"],
+        "hunger": 100,
+        "mood": 100,
+        "level": 1,
+        "xp": 0,
+        "wins": 0,
+        "losses": 0,
+        "egg_type": chosen["type"],
+        "egg_color": chosen["color"],
+        "hatched": False
+    }
+    
+    arena["players"][uid] = player
+    save_arena(arena)
+    
+    # Форматируем ответ
+    rarity_msg = ""
+    if chosen["chance"] <= 15:
+        rarity_msg = "⭐ РЕДКОСТЬ! ⭐"
+    if chosen["chance"] <= 5:
+        rarity_msg = "💫 ЛЕГЕНДАРНО! 💫"
+    
+    # Случайные реакции
+    reactions = [
+        f"Ты получил {chosen['emoji']}!",
+        f"Яйцо {chosen['color']} появилось из ниоткуда!",
+        f"В воздухе запахло {chosen['type']} энергией!"
+    ]
+    
+    out = []
+    out.append("━━━━━━━━━━━━━━━━")
+    out.append(f"🐣 <b>НОВОЕ ЯЙЦО!</b>")
+    out.append("━━━━━━━━━━━━━━━━")
+    out.append(f"{random.choice(reactions)}")
+    out.append(f"")
+    out.append(f"📦 Тип: {chosen['emoji']} <b>{chosen['type'].upper()}</b>")
+    out.append(f"🎨 Цвет: <i>{chosen['color']}</i>")
+    if rarity_msg:
+        out.append(f"🏆 {rarity_msg}")
+    out.append(f"")
+    out.append("📊 <b>Базовые характеристики:</b>")
+    out.append(f"❤️ HP: {base['hp']}")
+    out.append(f"💪 Сила: {base['strength']}")
+    out.append(f"🏃 Скорость: {base['speed']}")
+    out.append(f"🛡️ Защита: {base['defense']}")
+    out.append(f"🔮 Магия: {base['magic']}")
+    out.append(f"💨 Ловкость: {base['agility']}")
+    out.append(f"")
+    out.append("💡 Используй /incubate чтобы высидеть яйцо!")
+    out.append("━━━━━━━━━━━━━━━━")
+    
+    # Случайное дополнение
+    if random.random() < 0.2:  # 20% шанс
+        extras = [
+            "🌟 Божественное благословение ускорит рост!",
+            "🦋 Бабочка села на яйцо — к удаче!",
+            "🌙 Лунный свет проникает сквозь скорлупу...",
+            "⚡ Маленькая молния ударила в яйцо!"
+        ]
+        out.append(f"<i>{random.choice(extras)}</i>")
+    
+    return await message.reply("\n".join(out), parse_mode="HTML")
 async def stats_cmd(message: types.Message):
     uid = str(message.from_user.id)
     player = get_player(uid)
