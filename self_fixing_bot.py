@@ -138,6 +138,39 @@ class DarwinOrchestrator:
         except Exception as e:
             self.logger.warning(f"Не удалось запушить feedback.json: {e}")
 
+    def _apply_patch(self, original_code: str, new_code: str) -> str | None:
+        """
+        Вшивает новую функцию от LLM обратно в полный код бота.
+        Возвращает None, если не удалось найти функцию для замены.
+        """
+        import re
+        
+        # Извлекаем имя функции из нового кода
+        func_match = re.search(r'async def (\w+)\(', new_code)
+        if not func_match:
+            self.logger.error("Не удалось извлечь имя функции из ответа LLM")
+            return None
+        
+        func_name = func_match.group(1)
+        self.logger.info(f"Применяю патч для функции: {func_name}")
+        
+        # Ищем функцию в оригинальном коде
+        pattern = r'(async def ' + func_name + r'\(.*?\n(?:\s+.*\n)*)'
+        original_func_match = re.search(pattern, original_code)
+        
+        if not original_func_match:
+            self.logger.error(f"Функция {func_name} не найдена в оригинальном коде")
+            return None
+        
+        # Заменяем старую функцию на новую
+        patched_code = original_code.replace(original_func_match.group(1), new_code.strip())
+        
+        if patched_code == original_code:
+            self.logger.warning("Патч не изменил код")
+            return None
+            
+        return patched_code
+
     def _describe_changes(self, old_code: str, new_code: str) -> str:
         """Просит LLM описать изменения понятным языком."""
         try:
