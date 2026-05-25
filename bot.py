@@ -321,48 +321,158 @@ async def stats_cmd(message: types.Message):
 
 
 async def incubate_cmd(message: types.Message):
-    arena = load_arena()
+    """Улучшенная функция инкубации: 4 фазы, случайные события, визуальный прогресс."""
     uid = str(message.from_user.id)
+    arena = load_arena()
+    player = arena["players"].get(uid)
 
-    if uid not in arena["players"] or "egg" not in arena["players"][uid]:
-        await message.reply("У тебя нет яйца! Напиши /egg.")
-        return
-
-    egg = arena["players"][uid]["egg"]
-    egg["incubated"] = egg.get("incubated", False)
-
-    if egg["incubated"]:
-        await message.reply("Яйцо уже согрето! Подожди немного...")
-        return
-
-    egg["warmth"] = egg.get("warmth", 0) + 1
-
-    if egg["warmth"] >= 3:
-        pet = random_pet()
-        arena["players"][uid]["pet"] = pet
-        del arena["players"][uid]["egg"]
-        save_arena(arena)
-
+    if not player:
         await message.reply(
-            f"🎉 <b>Яйцо треснуло!</b>\n\n"
-            f"Из него вылупился: {pet['emoji']} <b>{pet['name']}</b>!\n"
-            f"⚡ Сила: {pet['strength']}\n"
-            f"💨 Ловкость: {pet['agility']}\n"
-            f"🔮 Магия: {pet['magic']}\n"
-            f"🛡️ Защита: {pet['defense']}\n"
-            f"💫 Скорость: {pet['speed']}\n\n"
-            f"Теперь расти его! /feed и /train",
-            parse_mode="HTML"
+            "❌ У тебя ещё нет питомца!\n"
+            "Сначала получи яйцо → /egg"
+        )
+        return
+
+    if player.get("hatched", False):
+        await message.reply(
+            "🥚 <b>Твой питомец уже вылупился!</b>\n"
+            "Он ждёт тебя в игре! Используй:\n"
+            "🍽 /feed — покормить\n"
+            "💪 /train — тренировать\n"
+            "⚔️ /battle — сразиться"
+        )
+        return
+
+    # Случайное событие при инкубации (шанс 30%)
+    random_event = random.random()
+    event_message = ""
+    
+    if random_event < 0.1:  # 10% — удача
+        bonus_inc = 2
+        event_message = (
+            f"🌟 <b>Удача!</b> Яйцо поймало солнечный луч! 🌟\n"
+            f"Прогресс увеличен на +{bonus_inc}!"
+        )
+    elif random_event < 0.2:  # 10% — неудача
+        penalty_inc = -1
+        event_message = (
+            f"🌩️ <b>Ой!</b> Яйцо задрожало от грома... 🌩️\n"
+            f"Прогресс уменьшен на {penalty_inc}!"
+        )
+    else:  # 80% — обычный инкубатор
+        event_message = (
+            f"🔥 Яйцо согревается в тепле инкубатора... 🔥"
+        )
+
+    # Применяем эффект события
+    inc_progress = player.get("inc_progress", 0)
+    if random_event < 0.1:
+        inc_progress += 2
+    elif random_event < 0.2:
+        inc_progress -= 1
+    else:
+        inc_progress += 1
+
+    # Гарантируем, что прогресс не уйдёт в минус
+    if inc_progress < 0:
+        inc_progress = 0
+
+    # Определяем фазу инкубации
+    phases = [
+        (0, "🥚 Яйцо только что получено. Оно холодное и неподвижное."),
+        (1, "🥚 Яйцо начинает слегка вибрировать. Внутри слышно слабое постукивание!"),
+        (2, "⚡ Яйцо светится! Трещины медленно ползут по скорлупе."),
+        (3, "🔥 Яйцо почти готово! Оно ходит ходуном! Осталось последнее усилие!")
+    ]
+    
+    current_phase = 0
+    current_desc = ""
+    for phase_progress, desc in phases:
+        if inc_progress >= phase_progress:
+            current_phase = phase_progress
+            current_desc = desc
+
+    # Создаём визуальный прогресс-бар (макс 4 стадии)
+    progress_bar = ""
+    for i in range(4):
+        if i < inc_progress:
+            progress_bar += "🟢"
+        else:
+            progress_bar += "⚫"
+
+    # Проверка на вылупление
+    if inc_progress >= 4:
+        # Генерация уникального питомца со случайными характеристиками
+        pet_types = [
+            {"name": "Огненный Дракон", "emoji": "🐉", "bonus_hp": 20, "bonus_str": 5},
+            {"name": "Ледяной Феникс", "emoji": "🦅", "bonus_hp": 15, "bonus_magic": 7},
+            {"name": "Каменный Голем", "emoji": "🗿", "bonus_hp": 30, "bonus_def": 8},
+            {"name": "Теневой Волк", "emoji": "🐺", "bonus_hp": 18, "bonus_agi": 6},
+        ]
+        
+        chosen_pet = random.choice(pet_types)
+        
+        player["hatched"] = True
+        player["pet_name"] = chosen_pet["name"]
+        player["pet_emoji"] = chosen_pet["emoji"]
+        player["hp"] = 50 + chosen_pet["bonus_hp"]
+        player["max_hp"] = 50 + chosen_pet["bonus_hp"]
+        player["strength"] = 5 + chosen_pet.get("bonus_str", 0)
+        player["agility"] = 5 + chosen_pet.get("bonus_agi", 0)
+        player["magic"] = 5 + chosen_pet.get("bonus_magic", 0)
+        player["defense"] = 5 + chosen_pet.get("bonus_def", 0)
+        player["speed"] = 5 + random.randint(1, 5)
+        player["hunger"] = 100
+        player["mood"] = 100
+        player["level"] = 1
+        player["xp"] = 0
+        player["wins"] = 0
+        player["losses"] = 0
+        player["inc_progress"] = 0
+        
+        await message.reply(
+            f"🎉🎉🎉 <b>ЯЙЦО ВЫЛУПИЛОСЬ!</b> 🎉🎉🎉\n\n"
+            f"{chosen_pet['emoji']} <b>Поздравляю!</b>\n"
+            f"У тебя родился <b>{chosen_pet['name']}</b>!\n\n"
+            f"📊 <b>Базовые характеристики:</b>\n"
+            f"❤️ HP: {player['max_hp']}\n"
+            f"⚔️ Сила: {player['strength']}\n"
+            f"🦅 Ловкость: {player['agility']}\n"
+            f"🔮 Магия: {player['magic']}\n"
+            f"🛡️ Защита: {player['defense']}\n"
+            f"💨 Скорость: {player['speed']}\n\n"
+            f"🐾 Начни ухаживать за питомцем:\n"
+            f"🍽 /feed — покормить\n"
+            f"💪 /train — тренировать\n"
+            f"⚔️ /battle — сразиться\n"
+            f"📋 /stats — статистика"
         )
     else:
-        save_arena(arena)
+        player["inc_progress"] = inc_progress
+        
+        # Прогноз следующей фазы
+        if current_phase < 3:
+            next_phase_descs = [
+                "Скоро начнёт вибрировать...",
+                "Скоро появится свечение...",
+                "Осталось чуть-чуть до вылупления!"
+            ]
+            next_desc = next_phase_descs[current_phase]
+        else:
+            next_desc = "Яйцо готово! Ещё раз и оно вылупится!"
+
         await message.reply(
-            f"🔥 Яйцо согрето! ({egg['warmth']}/3)\n"
-            f"Напиши /incubate ещё раз через минуту.",
-            parse_mode="HTML"
+            f"🥚 <b>Инкубация яйца</b> 🥚\n\n"
+            f"{event_message}\n\n"
+            f"📈 <b>Прогресс:</b> {inc_progress}/4\n"
+            f"{progress_bar}\n\n"
+            f"🔬 <b>Текущая фаза:</b>\n{current_desc}\n\n"
+            f"🔮 <b>Прогноз:</b> {next_desc}\n\n"
+            f"💡 <i>Повторяй /incubate, чтобы ускорить вылупление!</i>\n"
+            f"🌤️ <i>Будь внимателен — погода влияет на инкубацию!</i>"
         )
 
-
+    save_arena(arena)
 async def feed_cmd(message: types.Message):
     uid = str(message.from_user.id)
     player = get_player(uid)
