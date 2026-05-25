@@ -146,24 +146,158 @@ async def start_cmd(message: types.Message):
         )
 
 async def egg_cmd(message: types.Message):
-    uid = str(message.from_user.id)
-    player = get_player(uid)
+    """
+    Обработчик команды /egg. Выдаёт игроку яйцо, создавая запись в Supabase.
     
-    if player:
-        await message.reply("У тебя уже есть питомец! Используй /start.")
+    Аргументы:
+        message (types.Message): Сообщение от пользователя с командами.
+    
+    Возвращает:
+        None: Отправляет ответ пользователю через reply.
+    
+    Логика:
+        - Проверяет, существует ли игрок в БД (get_player). Если уже есть — сообщает.
+        - Иначе создаёт нового игрока через create_player.
+        - Логирует создание нового игрока.
+        - Формирует и отправляет сообщение с приветствием и характеристиками питомца.
+    """
+    # Константы для форматирования сообщения
+    EMOJI_EGG = "🥚"
+    STATS_SEPARATOR = " | "
+    STAT_NAMES = {
+        "strength": "⚔️Сила",
+        "agility": "💨Ловкость",
+        "magic": "🔮Магия",
+        "defense": "🛡️Защита",
+        "speed": "⚡Скорость",
+        "hp": "❤️HP",
+        "hunger": "🍖Голод",
+        "mood": "😊Настроение",
+        "level": "📊Уровень",
+        "xp": "⭐Опыт",
+        "wins": "🏆Побед",
+        "losses": "💀Поражений"
+    }
+    MAX_HUNGER = 100  # Максимальное значение голода
+    MIN_HUNGER = 0    # Минимальное значение голода
+    MAX_MOOD = 100    # Максимальное значение настроения
+    MIN_MOOD = 0      # Минимальное значение настроения
+    
+    user_id = str(message.from_user.id)
+    logger.info(f"Пользователь {user_id} запросил команду /egg")
+    
+    # Валидация входных данных
+    if not user_id or not user_id.isdigit():
+        logger.error(f"Некорректный user_id: {user_id}")
+        await message.reply("❌ Ошибка: некорректный идентификатор пользователя.")
         return
     
-    player = create_player(uid)
-    if player:
+    try:
+        # Проверка существования игрока
+        existing_player = get_player(user_id)
+        
+        # Если игрок уже существует
+        if existing_player:
+            logger.info(f"Игрок {user_id} уже существует, отказ в выдаче яйца")
+            # Проверяем, есть ли у него уже питомец
+            if existing_player.get("pet_name"):
+                await message.reply(
+                    f"🌟 У тебя уже есть питомец {existing_player.get('pet_emoji', EMOJI_EGG)} {existing_player.get('pet_name', 'Безымянный')}! "
+                    f"Ты можешь заботиться о нём через команды и сражаться в /battle.",
+                    parse_mode="HTML"
+                )
+            else:
+                await message.reply(
+                    f"{EMOJI_EGG} У тебя уже есть яйцо! Используй /incubate, чтобы высидеть его.",
+                    parse_mode="HTML"
+                )
+            return
+        
+        # Создание нового игрока
+        logger.info(f"Создание нового игрока {user_id}")
+        new_player = create_player(user_id)
+        
+        # Проверка успешности создания
+        if not new_player:
+            logger.error(f"Не удалось создать игрока {user_id} в Supabase")
+            await message.reply(
+                "❌ Ошибка при создании питомца. Пожалуйста, попробуй позже.",
+                parse_mode="HTML"
+            )
+            return
+        
+        # Валидация данных нового игрока
+        required_keys = ["pet_name", "pet_emoji", "hp", "max_hp", "strength", "agility", 
+                        "magic", "defense", "speed", "hunger", "mood", "level", "xp", "wins", "losses"]
+        for key in required_keys:
+            if key not in new_player:
+                logger.error(f"У нового игрока {user_id} отсутствует поле {key}")
+                await message.reply(
+                    "❌ Ошибка: некорректные данные питомца. Попробуй создать питомца снова.",
+                    parse_mode="HTML"
+                )
+                return
+        
+        # Обработка крайних случаев для числовых значений
+        hunger = max(MIN_HUNGER, min(MAX_HUNGER, new_player.get("hunger", 50)))
+        mood = max(MIN_MOOD, min(MAX_MOOD, new_player.get("mood", 50)))
+        hp = max(0, min(new_player.get("max_hp", 100), new_player.get("hp", 100)))
+        
+        # Формирование сообщения с характеристиками питомца
+        pet_name = new_player["pet_name"]
+        pet_emoji = new_player["pet_emoji"]
+        
+        # Сборка строки характеристик
+        stats_lines = []
+        
+        # Основные характеристики
+        basic_stats = [
+            f"{STAT_NAMES['hp']} {hp}/{new_player.get('max_hp', 100)}",
+            f"{STAT_NAMES['hunger']} {hunger}/{MAX_HUNGER}",
+            f"{STAT_NAMES['mood']} {mood}/{MAX_MOOD}",
+            f"{STAT_NAMES['level']} {new_player.get('level', 1)}",
+            f"{STAT_NAMES['xp']} {new_player.get('xp', 0)}"
+        ]
+        stats_lines.append("📊 <b>Основное:</b>")
+        stats_lines.append(STATS_SEPARATOR.join(basic_stats))
+        
+        # Боевые характеристики
+        battle_stats = [
+            f"{STAT_NAMES['strength']} {new_player.get('strength', 0)}",
+            f"{STAT_NAMES['agility']} {new_player.get('agility', 0)}",
+            f"{STAT_NAMES['magic']} {new_player.get('magic', 0)}",
+            f"{STAT_NAMES['defense']} {new_player.get('defense', 0)}",
+            f"{STAT_NAMES['speed']} {new_player.get('speed', 0)}"
+        ]
+        stats_lines.append("⚔️ <b>Боевые:</b>")
+        stats_lines.append(STATS_SEPARATOR.join(battle_stats))
+        
+        # Статистика
+        statistics = [
+            f"{STAT_NAMES['wins']} {new_player.get('wins', 0)}",
+            f"{STAT_NAMES['losses']} {new_player.get('losses', 0)}"
+        ]
+        stats_lines.append("🏅 <b>Статистика:</b>")
+        stats_lines.append(STATS_SEPARATOR.join(statistics))
+        
+        # Формирование итогового сообщения
+        message_text = (
+            f"🎉 <b>Поздравляю, {message.from_user.first_name}!</b>\n\n"
+            f"{EMOJI_EGG} Ты получил яйцо! Высиживай его командой /incubate.\n\n"
+            f"🐣 Из яйца вылупится <b>{pet_emoji} {pet_name}</b>!\n\n"
+            f"{chr(10).join(stats_lines)}\n\n"
+            f"💡 <i>Подсказка: используй /help для просмотра всех команд.</i>"
+        )
+        
+        logger.info(f"Новый игрок {user_id} успешно создан с питомцем {pet_name}")
+        await message.reply(message_text, parse_mode="HTML")
+        
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка при обработке /egg для пользователя {user_id}: {e}")
         await message.reply(
-            f"🥚 <b>Яйцо получено!</b>\n\n"
-            f"Теперь высиживай его! Напиши /incubate (нужно 4 раза).\n"
-            f"Тип яйца: {player.get('egg_type', 'обычное')}",
+            "❌ Произошла неожиданная ошибка. Пожалуйста, попробуй позже.",
             parse_mode="HTML"
         )
-    else:
-        await message.reply("❌ Ошибка при создании питомца. Попробуй позже.")
-
 async def incubate_cmd(message: types.Message):
     """Инкубация яйца питомца.
     
