@@ -357,17 +357,19 @@ class DarwinOrchestrator:
             self.notifier.send(f"💥 Критическая ошибка загрузки: {str(e)[:200]}", "error")
             return False
 
-        # 🆕 Загружаем фидбек из GitHub API (актуальная версия)
+        # 🆕 Загружаем фидбек из GitHub API, НО НЕ ОЧИЩАЕМ пока
         feedback_data = self._load_feedback_from_github()
+        feedback_text = ""
         if feedback_data:
             self.logger.info(f"📝 Загружено {len(feedback_data)} пожеланий из GitHub")
-            # Очищаем фидбек на GitHub
-            self._clear_feedback_on_github()
+            lines = [f"- {msg.get('text', '?')}" for msg in feedback_data]
+            feedback_text = "\n".join(lines)
 
         # --- Шаг 2: Поиск и исправление багов ---
         try:
             self.notifier.send("🔍 Поиск багов через LLM...", "info")
-            fixed_func_code = self.llm.analyze_bugs(code)
+            # Передаём фидбек напрямую в analyze_bugs
+            fixed_func_code = self.llm.analyze_bugs(code, feedback_text)
 
             if fixed_func_code and fixed_func_code != code:
                 self.logger.info(f"Найдены изменения в функции: {len(fixed_func_code)} байт")
@@ -453,6 +455,10 @@ class DarwinOrchestrator:
         except Exception as e:
             self.logger.error(f"Ошибка этапа фичи: {e}")
             stats["errors"].append(f"Фича: {e}")
+
+        # 🆕 Очищаем фидбек ТОЛЬКО после успешной обработки
+        if feedback_data:
+            self._clear_feedback_on_github()
 
         # --- Итоги ---
         duration = (datetime.now(timezone.utc) - cycle_start).total_seconds()
