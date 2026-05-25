@@ -1,10 +1,5 @@
 [
   {
-    "text": "Кулдауны всё ещё не работают. Добавь в incubate_cmd проверку: если прошло меньше 60 минут с последнего вызова — говори \"Подожди X секунд\". Храни время последнего действия в last_incubate_time у игрока. Используй datetime.now() для сравнения. То же самое для feed_cmd и train_cmd.",
-    "author": "admin",
-    "timestamp": "2026-05-25T07:00:11.723289+00:00"
-  },
-  {
     "text": "Добавь кулдауны через Supabase: перед incubate проверяй last_incubate_time (если меньше 60 минут назад — отказ), после успешной инкубации обновляй last_incubate_time через update_player. То же самое для feed (last_feed_time, 30 минут) и train (last_train_time, 45 минут). Используй datetime.now(timezone.utc) для получения текущего времени.",
     "author": "admin",
     "timestamp": "2026-05-25T07:08:40.487348+00:00"
