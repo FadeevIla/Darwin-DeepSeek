@@ -207,10 +207,9 @@ class DarwinOrchestrator:
                 "Только описание, ничего лишнего."
             )
 
-            # Используем DeepSeek (основная и запасная)
             models = [
-                "deepseek-chat",  # DeepSeek V4 Flash
-                "deepseek-reasoner",  # DeepSeek R1 (запасная)
+                "deepseek-chat",
+                "deepseek-reasoner",
             ]
 
             description = None
@@ -242,7 +241,7 @@ class DarwinOrchestrator:
             if description:
                 return description
             else:
-                self.logger.warning(f"Все модели недоступны для описания. Последняя ошибка: {last_error}")
+                self.logger.warning(f"Все модели недоступны. Ошибка: {last_error}")
                 return "Добавил новую функцию! Попробуй /help, чтобы узнать, что изменилось 🧬"
 
         except Exception as e:
@@ -311,7 +310,6 @@ class DarwinOrchestrator:
         import re
         import ast
 
-        # Библиотеки, которые гарантированно установлены (стандартная библиотека Python)
         std_libs = {
             'os', 'sys', 'time', 'json', 're', 'random', 'asyncio', 'logging',
             'pathlib', 'datetime', 'traceback', 'tempfile', 'hashlib', 'base64',
@@ -319,37 +317,29 @@ class DarwinOrchestrator:
             'functools', 'itertools', 'math', 'string', 'textwrap', 'urllib',
         }
 
-        # Библиотеки, которые мы точно знаем, что нужны (ядро)
         always_needed = {
             'PyGithub', 'openai', 'pyflakes', 'requests', 'python-dotenv',
         }
 
-        # Извлекаем импорты из кода
         imports = set()
         for line in code.split('\n'):
             line = line.strip()
-            # import xxx
             if line.startswith('import '):
                 parts = line.replace('import ', '').split(',')
                 for part in parts:
                     lib = part.strip().split('.')[0].split(' as ')[0].strip()
                     imports.add(lib)
-            # from xxx import yyy
             elif line.startswith('from '):
                 lib = line.split(' ')[1].split('.')[0].strip()
                 imports.add(lib)
 
-        # Определяем, какие библиотеки нужно установить
-        # Это эвристика: библиотека не из std_libs → её нужно устанавливать
         needed = set()
         for lib in imports:
             if lib not in std_libs:
                 needed.add(lib)
 
-        # Добавляем всегда нужные
         needed = needed | always_needed
 
-        # Сопоставление имён импортов с именами пакетов в PyPI
         pypi_names = {
             'telegram': 'python-telegram-bot',
             'aiogram': 'aiogram==2.25.1',
@@ -370,32 +360,26 @@ class DarwinOrchestrator:
             'uvicorn': 'uvicorn',
         }
 
-        # Формируем список пакетов для requirements.txt
         packages = []
         for lib in sorted(needed):
-            # Пропускаем локальные модули проекта
             if lib in ['core', 'utils', 'config', 'bot', 'self_fixing_bot']:
                 continue
             packages.append(pypi_names.get(lib, lib))
 
-        # Читаем текущий requirements.txt
         try:
             with open('requirements.txt', 'r') as f:
                 current = set(line.strip().split('==')[0].split('>=')[0] for line in f if line.strip())
         except FileNotFoundError:
             current = set()
 
-        # Проверяем, есть ли новые
         current_pkg_names = set()
         for pkg in packages:
             current_pkg_names.add(pkg.split('==')[0].split('>=')[0])
 
         if current_pkg_names - current:
-            # Есть новые зависимости — обновляем requirements.txt
             new_content = '\n'.join(sorted(packages)) + '\n'
             with open('requirements.txt', 'w') as f:
                 f.write(new_content)
-
             self.logger.info(f"📦 Обнаружены новые зависимости: {current_pkg_names - current}")
             return True, new_content
         else:
@@ -433,6 +417,17 @@ class DarwinOrchestrator:
         except Exception as e:
             self.logger.warning(f"Не удалось синхронизировать фидбек: {e}")
 
+        # 🆕 Загружаем и ОЧИЩАЕМ фидбек ДО обработки (чтобы не потерять)
+        feedback_data = []
+        try:
+            from core.feedback import load_feedback, save_feedback
+            feedback_data = load_feedback()
+            if feedback_data:
+                self.logger.info(f"📝 Загружено {len(feedback_data)} пожеланий, очищаю файл")
+                save_feedback([])
+        except Exception as e:
+            self.logger.warning(f"Не удалось загрузить фидбек: {e}")
+
         # --- Шаг 2: Поиск и исправление багов ---
         try:
             self.notifier.send("🔍 Поиск багов через LLM...", "info")
@@ -460,18 +455,9 @@ class DarwinOrchestrator:
                             self.memory.add_commit(commit_sha, "Auto-fix")
                             stats["bugs_fixed"] = True
 
-                            # Генерируем описание исправления
                             description = self._describe_changes(code, validated_code)
                             self._save_update_description(description, commit_sha)
                             self.notifier.send(f"🐛 {description}", "fix")
-
-                            # Принудительно чистим фидбек после обработки
-                            try:
-                                from core.feedback import clear_feedback
-                                clear_feedback()
-                                self.logger.info("📝 Фидбек очищен после обработки")
-                            except Exception as e:
-                                self.logger.warning(f"Не удалось очистить фидбек: {e}")
 
                             code, sha = validated_code, commit_sha
                         else:
@@ -518,18 +504,9 @@ class DarwinOrchestrator:
                                 self.memory.add_commit(commit_sha, "Auto-feature")
                                 stats["feature_added"] = True
 
-                                # Генерируем описание новой фичи
                                 description = self._describe_changes(code, validated_code)
                                 self._save_update_description(description, commit_sha)
                                 self.notifier.send(f"✨ {description}", "feature")
-
-                                # Принудительно чистим фидбек после обработки
-                                try:
-                                    from core.feedback import clear_feedback
-                                    clear_feedback()
-                                    self.logger.info("📝 Фидбек очищен после обработки")
-                                except Exception as e:
-                                    self.logger.warning(f"Не удалось очистить фидбек: {e}")
 
                                 code, sha = validated_code, commit_sha
                             else:
