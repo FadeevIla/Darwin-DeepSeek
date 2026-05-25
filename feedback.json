@@ -1,1 +1,7 @@
-[]
+[
+  {
+    "text": "В battle_cmd при вызове на дуэль вместо message.chat.get_member используй поиск игрока в Supabase: 1) Получи список всех игроков через get_all_players (добавь эту функцию в БД). 2) Найди игрока по username (добавь поле username в таблицу players). 3) Если username нет в таблице — сохраняй его при /start. 4) Убери зависимость от message.chat.get_member — она не работает в личных сообщениях.",
+    "author": "admin",
+    "timestamp": "2026-05-25T15:37:13.436465+00:00"
+  }
+]
