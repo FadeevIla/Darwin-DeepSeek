@@ -383,59 +383,239 @@ async def train_cmd(message: types.Message):
 
 
 async def battle_cmd(message: types.Message):
-    arena = load_arena()
+    """Битва с другим игроком или ботом"""
     uid = str(message.from_user.id)
-
-    if uid not in arena["players"] or "pet" not in arena["players"][uid]:
-        await message.reply("У тебя нет питомца! Напиши /egg.")
+    arena = load_arena()
+    player = arena["players"].get(uid)
+    
+    if not player:
+        await message.reply("❌ У тебя нет питомца! Используй /egg")
         return
-
-    # Ищем соперника
-    opponents = [p for p in arena["players"] if p != uid and "pet" in arena["players"][p]]
-
-    if not opponents:
-        # Бой с ботом
-        bot_pet = random_pet()
-        bot_pet["name"] = "Дикий " + bot_pet["name"]
-        my_pet = arena["players"][uid]["pet"]
-
-        my_power = my_pet["strength"] + my_pet["agility"] + my_pet["level"] * 5
-        bot_power = bot_pet["strength"] + bot_pet["agility"] + bot_pet["level"] * 3
-
-        if my_power >= bot_power:
-            my_pet["wins"] += 1
-            my_pet["xp"] += 30
-            result = f"⚔️ Победа над {bot_pet['emoji']} {bot_pet['name']}!\n+30 XP"
-        else:
-            my_pet["losses"] += 1
-            my_pet["hp"] = max(1, my_pet["hp"] - 20)
-            result = f"💔 Поражение от {bot_pet['emoji']} {bot_pet['name']}...\n-20 HP"
-
-        save_arena(arena)
-        await message.reply(result, parse_mode="HTML")
+    
+    # Проверка на яйцо
+    if player.get("egg"):
+        await message.reply("🥚 Твой питомец ещё в яйце! Используй /incubate")
+        return
+    
+    # Проверка здоровья
+    if player["hp"] <= 0:
+        await message.reply("💀 Твой питомец без сознания! Используй /feed для восстановления")
+        return
+    
+    # Определяем противника
+    args = message.get_args()
+    opponent_uid = None
+    is_bot = False
+    
+    if args:
+        # Попытка найти игрока по нику или id
+        for pid, pdata in arena["players"].items():
+            if pdata.get("username") == args or pid == args:
+                opponent_uid = pid
+                break
+        
+        if not opponent_uid:
+            await message.reply("❌ Игрок не найден! Используй /battle для битвы с ботом")
+            return
     else:
-        opp_id = random.choice(opponents)
-        opp_pet = arena["players"][opp_id]["pet"]
-        my_pet = arena["players"][uid]["pet"]
-
-        my_power = my_pet["strength"] + my_pet["agility"] + my_pet["level"] * 5
-        opp_power = opp_pet["strength"] + opp_pet["agility"] + opp_pet["level"] * 5
-
-        if my_power >= opp_power:
-            my_pet["wins"] += 1
-            opp_pet["losses"] += 1
-            my_pet["xp"] += 50
-            result = f"⚔️ Победа над {opp_pet['emoji']} {opp_pet['name']}!\n+50 XP"
+        # Битва с ботом
+        is_bot = True
+    
+    # Создаём противника
+    if is_bot:
+        # Определяем уровень бота на основе уровня игрока
+        player_level = player.get("level", 1)
+        
+        # Разные типы ботов с разной сложностью
+        bot_templates = [
+            {"name": "Дикий волк", "emoji": "🐺", "hp": 80, "max_hp": 80, "strength": 12, "agility": 10, "magic": 5, "defense": 8, "speed": 14, "level": 1},
+            {"name": "Лесной тролль", "emoji": "🧌", "hp": 120, "max_hp": 120, "strength": 15, "agility": 5, "magic": 3, "defense": 12, "speed": 6, "level": 2},
+            {"name": "Теневой маг", "emoji": "🧙", "hp": 70, "max_hp": 70, "strength": 8, "agility": 12, "magic": 18, "defense": 6, "speed": 10, "level": 3},
+            {"name": "Каменный голем", "emoji": "🗿", "hp": 150, "max_hp": 150, "strength": 18, "agility": 3, "magic": 2, "defense": 20, "speed": 4, "level": 4},
+            {"name": "Дракон-подросток", "emoji": "🐉", "hp": 100, "max_hp": 100, "strength": 14, "agility": 8, "magic": 10, "defense": 10, "speed": 8, "level": 5},
+        ]
+        
+        # Выбираем бота в зависимости от уровня игрока
+        if player_level <= 2:
+            bot_template = bot_templates[0]
+        elif player_level <= 4:
+            bot_template = random.choice(bot_templates[:3])
+        elif player_level <= 6:
+            bot_template = random.choice(bot_templates[2:4])
         else:
-            my_pet["losses"] += 1
-            opp_pet["wins"] += 1
-            my_pet["hp"] = max(1, my_pet["hp"] - 25)
-            result = f"💔 Поражение от {opp_pet['emoji']} {opp_pet['name']}...\n-25 HP"
-
-        save_arena(arena)
-        await message.reply(result, parse_mode="HTML")
-
-
+            bot_template = random.choice(bot_templates[3:])
+        
+        # Масштабируем бота под уровень игрока
+        scale = 1 + (player_level - bot_template["level"]) * 0.1
+        opponent = {
+            "pet_name": bot_template["name"],
+            "pet_emoji": bot_template["emoji"],
+            "hp": int(bot_template["hp"] * scale),
+            "max_hp": int(bot_template["max_hp"] * scale),
+            "strength": int(bot_template["strength"] * scale),
+            "agility": int(bot_template["agility"] * scale),
+            "magic": int(bot_template["magic"] * scale),
+            "defense": int(bot_template["defense"] * scale),
+            "speed": int(bot_template["speed"] * scale),
+            "level": player_level,
+        }
+    else:
+        opponent = arena["players"].get(opponent_uid)
+        if not opponent:
+            await message.reply("❌ Игрок не найден!")
+            return
+        
+        if opponent.get("egg"):
+            await message.reply("🥚 Противник ещё в яйце! Подожди")
+            return
+        
+        if opponent["hp"] <= 0:
+            await message.reply("💀 Противник без сознания!")
+            return
+    
+    # Симуляция боя
+    player_hp = player["hp"]
+    opponent_hp = opponent["hp"]
+    
+    battle_log = []
+    turn = 1
+    max_turns = 20
+    
+    # Определяем, кто ходит первым (по скорости)
+    player_speed = player.get("speed", 10)
+    opponent_speed = opponent.get("speed", 10)
+    
+    player_first = player_speed >= opponent_speed
+    
+    while player_hp > 0 and opponent_hp > 0 and turn <= max_turns:
+        if (player_first and turn % 2 == 1) or (not player_first and turn % 2 == 0):
+            # Ход игрока
+            # Выбор атаки
+            attack_type = random.choices(
+                ["strength", "agility", "magic"],
+                weights=[player.get("strength", 10), player.get("agility", 10), player.get("magic", 10)]
+            )[0]
+            
+            base_damage = player.get(attack_type, 10)
+            # Критический удар (20% шанс)
+            if random.random() < 0.2:
+                base_damage = int(base_damage * 2.5)
+                crit_text = " 💥 КРИТИЧЕСКИЙ УДАР!"
+            else:
+                crit_text = ""
+            
+            # Защита противника
+            defense = opponent.get("defense", 5)
+            damage = max(1, base_damage - defense // 2)
+            
+            # Случайный разброс
+            damage = max(1, int(damage * random.uniform(0.8, 1.2)))
+            
+            opponent_hp -= damage
+            battle_log.append(f"⚔️ Ты атакуешь {attack_type} и наносишь {damage} урона!{crit_text}")
+            
+            # Проклятие (10% шанс на штраф)
+            if random.random() < 0.1:
+                curse_type = random.choice(["strength", "agility", "magic", "defense", "speed"])
+                curse_amount = random.randint(1, 3)
+                player[curse_type] = max(1, player.get(curse_type, 10) - curse_amount)
+                battle_log.append(f"😈 Проклятие! {curse_type} уменьшено на {curse_amount}!")
+        else:
+            # Ход противника
+            # Выбор атаки противника
+            attack_type = random.choices(
+                ["strength", "agility", "magic"],
+                weights=[opponent.get("strength", 10), opponent.get("agility", 10), opponent.get("magic", 10)]
+            )[0]
+            
+            base_damage = opponent.get(attack_type, 10)
+            # Критический удар врага (15% шанс)
+            if random.random() < 0.15:
+                base_damage = int(base_damage * 2.0)
+                crit_text = " 💥 КРИТИЧЕСКИЙ УДАР!"
+            else:
+                crit_text = ""
+            
+            # Защита игрока
+            defense = player.get("defense", 5)
+            damage = max(1, base_damage - defense // 2)
+            
+            # Случайный разброс
+            damage = max(1, int(damage * random.uniform(0.8, 1.2)))
+            
+            player_hp -= damage
+            battle_log.append(f"💢 {opponent['pet_emoji']} {opponent['pet_name']} атакует {attack_type} и наносит {damage} урона!{crit_text}")
+            
+            # Проклятие для игрока (8% шанс)
+            if random.random() < 0.08:
+                curse_type = random.choice(["strength", "agility", "magic", "defense", "speed"])
+                curse_amount = random.randint(1, 2)
+                player[curse_type] = max(1, player.get(curse_type, 10) - curse_amount)
+                battle_log.append(f"😈 Проклятие! Твой {curse_type} уменьшен на {curse_amount}!")
+        
+        turn += 1
+    
+    # Определение победителя
+    if player_hp <= 0:
+        winner = "opponent"
+        player["losses"] = player.get("losses", 0) + 1
+        if not is_bot:
+            opponent["wins"] = opponent.get("wins", 0) + 1
+    elif opponent_hp <= 0:
+        winner = "player"
+        player["wins"] = player.get("wins", 0) + 1
+        # Награда за победу
+        xp_gain = random.randint(10, 30) * (1 + opponent.get("level", 1) // 2)
+        player["xp"] = player.get("xp", 0) + xp_gain
+        # Проверка на повышение уровня
+        if player["xp"] >= player.get("level", 1) * 100:
+            player["level"] = player.get("level", 1) + 1
+            player["xp"] = 0
+            player["max_hp"] = player.get("max_hp", 100) + 10
+            player["hp"] = player["max_hp"]
+            battle_log.append(f"🎉 УРОВЕНЬ ПОВЫШЕН! Теперь ты {player['level']} уровня!")
+        
+        if not is_bot:
+            opponent["losses"] = opponent.get("losses", 0) + 1
+    else:
+        # Ничья
+        winner = "draw"
+        player["losses"] = player.get("losses", 0) + 1
+        if not is_bot:
+            opponent["losses"] = opponent.get("losses", 0) + 1
+    
+    # Обновление здоровья
+    player["hp"] = max(0, player_hp)
+    if not is_bot:
+        opponent["hp"] = max(0, opponent_hp)
+    
+    # Голод увеличивается после боя
+    player["hunger"] = min(100, player.get("hunger", 0) + 15)
+    
+    # Сохранение
+    arena["players"][uid] = player
+    if not is_bot and opponent_uid:
+        arena["players"][opponent_uid] = opponent
+    save_arena(arena)
+    
+    # Формирование отчёта
+    result_text = ""
+    if winner == "player":
+        result_text = f"🎉 ПОБЕДА! Ты одолел {opponent['pet_emoji']} {opponent['pet_name']}!"
+    elif winner == "opponent":
+        result_text = f"💀 ПОРАЖЕНИЕ! {opponent['pet_emoji']} {opponent['pet_name']} одолел тебя!"
+    else:
+        result_text = "🤝 НИЧЬЯ! Оба питомца выдохлись!"
+    
+    report = f"⚔️ **БИТВА** ⚔️\n\n"
+    report += f"{player['pet_emoji']} **{player['pet_name']}** (Ур.{player.get('level', 1)}) VS "
+    report += f"{opponent['pet_emoji']} **{opponent['pet_name']}** (Ур.{opponent.get('level', 1)})\n\n"
+    report += f"**Итог:** {result_text}\n\n"
+    report += "**Ход битвы:**\n"
+    report += "\n".join(battle_log[-10:])  # Показываем последние 10 ходов
+    report += f"\n\n**Твой питомец:** ❤️ {player['hp']}/{player['max_hp']} | 🍖 {player.get('hunger', 0)}%"
+    
+    await message.reply(report)
 async def top_cmd(message: types.Message):
     players = get_top_players(10)
 
