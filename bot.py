@@ -537,150 +537,171 @@ async def train_cmd(message: types.Message):
     )
 
 async def battle_cmd(message: types.Message):
-    """Битва между питомцами. Вызов на дуэль с возможностью ставки.
+    """Обрабатывает команду /battle для дуэли с другим игроком.
     
-    Формула боя:
-    - Сила (strength) — увеличивает физический урон
-    - Ловкость (agility) — даёт шанс уклониться от атаки (20% + agility/2)
-    - Магия (magic) — увеличивает магический урон и шанс крита
-    - Защита (defense) — уменьшает входящий урон (урон / (1 + defense/50))
-    - Скорость (speed) — определяет кто атакует первым (сравнение speed, бросок d20)
+    Проверяет состояние питомца, наличие противника, проводит бой и обновляет статистику.
+    После победы с шансом 30% выпадает аптечка.
     
     Args:
-        message: Объект сообщения от пользователя
+        message: Объект сообщения от aiogram
+        
+    Returns:
+        None
     """
-    # Запрет ботам и каналам
-    if message.from_user.is_bot or message.sender_chat:
+    MIN_HP_FOR_BATTLE = 1
+    KNOCKOUT_HP = 0
+    HEAL_CHANCE = 0.3
+    HEAL_AMOUNT = 50
+    
+    uid = str(message.from_user.id)
+    player = get_player(uid)
+    
+    if not player:
+        await message.reply("❌ Ты ещё не создал питомца! Напиши /start")
         return
     
-    COOLDOWN_SECONDS = 300  # 5 минут
-    MIN_BET = 1
-    MAX_BET = 1000
-    KNOCKOUT_HP = 0
-    HEAL_DROP_CHANCE = 0.3
-    HEAL_ITEM = "аптечка"
-    HEAL_RESTORE_PERCENT = 0.5
+    if player.get("hp", 0) <= KNOCKOUT_HP:
+        await message.reply("💀 Твой питомец без сознания! Используй /use аптечка, чтобы восстановить его.")
+        return
+    
+    if player.get("hp", 0) < MIN_HP_FOR_BATTLE:
+        await message.reply("💀 Твой питомец слишком слаб для боя! Покорми его /feed или используй аптечку.")
+        return
+    
+    args = message.get_args()
+    if not args:
+        await message.reply("⚔️ Укажи противника: /battle @username")
+        return
+    
+    target_username = args.strip()
+    if not target_username.startswith('@'):
+        target_username = '@' + target_username
     
     try:
-        # Проверка аргументов
-        args = message.get_args().split()
-        if not args:
-            await message.reply("❌ Использование: /battle @username [ставка]\nПример: /battle @player1 50")
+        chat_member = await message.chat.get_member(target_username.replace('@', ''))
+        if not chat_member:
+            await message.reply(f"❌ Игрок {target_username} не найден в этом чате.")
             return
-        
-        # Получаем цель
-        target_username = args[0].replace("@", "")
-        bet = 0
-        
-        # Парсим ставку
-        if len(args) > 1:
-            try:
-                bet = int(args[1])
-                if bet < MIN_BET or bet > MAX_BET:
-                    await message.reply(f"❌ Ставка должна быть от {MIN_BET} до {MAX_BET} монет")
-                    return
-            except ValueError:
-                await message.reply("❌ Неверный формат ставки. Укажите число монет")
-                return
-        
-        # Получаем игроков
-        attacker = get_player(str(message.from_user.id))
-        if not attacker:
-            await message.reply("❌ У вас нет питомца! Используйте /start")
-            return
-        
-        # Проверка нокаута
-        if attacker.get("hp", 0) <= KNOCKOUT_HP:
-            await message.reply("💀 Ваш питомец в нокауте! Используйте /use аптечка для восстановления")
-            return
-        
-        # Проверка кулдауна
-        last_battle = attacker.get("last_battle_time", 0)
-        if last_battle:
-            from datetime import datetime, timezone
-            last_battle_dt = datetime.fromisoformat(last_battle) if isinstance(last_battle, str) else last_battle
-            if isinstance(last_battle_dt, str):
-                last_battle_dt = datetime.fromisoformat(last_battle_dt)
-            time_diff = (datetime.now(timezone.utc) - last_battle_dt).total_seconds()
-            if time_diff < COOLDOWN_SECONDS:
-                remaining = int(COOLDOWN_SECONDS - time_diff)
-                await message.reply(f"⏳ Подождите {remaining} секунд перед следующей битвой")
-                return
-        
-        # Ищем цель по username
-        target_player = None
-        try:
-            # Пробуем найти через Supabase
-            if supabase:
-                response = supabase.table("players").select("*").execute()
-                for player in response.data:
-                    # Получаем username из Telegram
-                    try:
-                        chat_member = await message.bot.get_chat_member(message.chat.id, player["user_id"])
-                        if chat_member.user.username and chat_member.user.username.lower() == target_username.lower():
-                            target_player = player
-                            break
-                    except:
-                        continue
-        except Exception as e:
-            logger.error(f"Ошибка поиска цели: {e}")
-        
-        if not target_player:
-            await message.reply(f"❌ Игрок @{target_username} не найден или у него нет питомца")
-            return
-        
-        # Проверка нокаута цели
-        if target_player.get("hp", 0) <= KNOCKOUT_HP:
-            await message.reply(f"💀 Питомец @{target_username} в нокауте! Он не может сражаться")
-            return
-        
-        # Проверка баланса для ставки
-        if bet > 0:
-            if attacker.get("coins", 0) < bet:
-                await message.reply(f"❌ У вас недостаточно монет. Нужно: {bet}, есть: {attacker.get('coins', 0)}")
-                return
-            if target_player.get("coins", 0) < bet:
-                await message.reply(f"❌ У @{target_username} недостаточно монет для ставки {bet}")
-                return
-        
-        # Отправляем вызов цели
-        target_id = target_player["user_id"]
-        try:
-            # Создаём клавиатуру для принятия вызова
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-            keyboard = InlineKeyboardMarkup(row_width=2)
-            accept_btn = InlineKeyboardButton("⚔️ Принять вызов", callback_data=f"accept_duel_{message.from_user.id}_{bet}")
-            decline_btn = InlineKeyboardButton("❌ Отклонить", callback_data=f"decline_duel_{message.from_user.id}")
-            keyboard.add(accept_btn, decline_btn)
-            
-            bet_text = f"\n💰 Ставка: {bet} монет" if bet > 0 else ""
-            await message.bot.send_message(
-                target_id,
-                f"⚔️ @{message.from_user.username} вызывает вас на битву!{bet_text}\n\n"
-                f"Ваш питомец: {target_player.get('pet_emoji', '🐉')} {target_player.get('pet_name', 'Питомец')}\n"
-                f"Противник: {attacker.get('pet_emoji', '🐉')} {attacker.get('pet_name', 'Питомец')}",
-                reply_markup=keyboard
-            )
-            await message.reply(f"✅ Вызов отправлен @{target_username}")
-            
-            # Сохраняем информацию о вызове в временном хранилище
-            if not hasattr(battle_cmd, 'pending_duels'):
-                battle_cmd.pending_duels = {}
-            battle_cmd.pending_duels[f"{message.from_user.id}_{target_id}"] = {
-                "attacker_id": message.from_user.id,
-                "target_id": target_id,
-                "bet": bet,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-            
-        except Exception as e:
-            logger.error(f"Ошибка отправки вызова: {e}")
-            await message.reply("❌ Не удалось отправить вызов. Возможно, игрок заблокировал бота")
-            return
-            
     except Exception as e:
-        logger.error(f"Ошибка в battle_cmd: {e}", exc_info=True)
-        await message.reply("❌ Произошла ошибка при подготовке битвы")
+        logger.error(f"Ошибка поиска пользователя: {e}")
+        await message.reply(f"❌ Не удалось найти игрока {target_username}.")
+        return
+    
+    target_uid = str(chat_member.user.id)
+    
+    if target_uid == uid:
+        await message.reply("🤦 Нельзя сражаться с самим собой!")
+        return
+    
+    target_player = get_player(target_uid)
+    
+    if not target_player:
+        await message.reply(f"❌ Игрок {target_username} ещё не активировал питомца. Попроси его написать /start боту в личные сообщения.")
+        return
+    
+    if target_player.get("hp", 0) <= KNOCKOUT_HP:
+        await message.reply(f"💀 Питомец {target_username} без сознания! Он не может сражаться.")
+        return
+    
+    if target_player.get("hp", 0) < MIN_HP_FOR_BATTLE:
+        await message.reply(f"💀 Питомец {target_username} слишком слаб для боя!")
+        return
+    
+    # Расчет урона
+    player_attack = player.get("strength", 5) + player.get("magic", 3)
+    target_defense = target_player.get("defense", 3)
+    target_speed = target_player.get("speed", 5)
+    
+    # Базовая механика боя
+    damage = max(1, player_attack - target_defense // 2)
+    
+    # Шанс критического удара
+    crit_chance = player.get("agility", 5) / 100
+    if random.random() < crit_chance:
+        damage = int(damage * 1.5)
+        crit_text = " 💥 КРИТИЧЕСКИЙ УДАР!"
+    else:
+        crit_text = ""
+    
+    # Шанс уклонения
+    dodge_chance = target_speed / 100
+    if random.random() < dodge_chance:
+        await message.reply(f"⚔️ {player.get('pet_emoji', '🐉')} {player.get('pet_name', 'Питомец')} атакует {target_username}!\n"
+                          f"🔄 {target_username} уклонился от атаки!")
+        return
+    
+    # Нанесение урона
+    new_hp = max(KNOCKOUT_HP, target_player.get("hp", 100) - damage)
+    
+    # Проверка нокаута
+    if new_hp <= KNOCKOUT_HP:
+        new_hp = KNOCKOUT_HP
+        knockout_text = "\n💀 ПРОТИВНИК В НОКАУТЕ!"
+    else:
+        knockout_text = ""
+    
+    # Обновление статистики
+    target_data = {"hp": new_hp}
+    player_data = {}
+    
+    if new_hp <= KNOCKOUT_HP:
+        # Победа
+        player_data["wins"] = player.get("wins", 0) + 1
+        player_data["xp"] = player.get("xp", 0) + 20
+        target_data["losses"] = target_player.get("losses", 0) + 1
+        
+        # Шанс выпадения аптечки
+        if random.random() < HEAL_CHANCE:
+            inventory = player.get("inventory", {})
+            if isinstance(inventory, str):
+                try:
+                    import json
+                    inventory = json.loads(inventory)
+                except:
+                    inventory = {}
+            
+            if "аптечка" not in inventory:
+                inventory["аптечка"] = 0
+            inventory["аптечка"] += 1
+            player_data["inventory"] = inventory
+            
+            heal_drop_text = "\n🎁 Выпала аптечка!"
+        else:
+            heal_drop_text = ""
+        
+        # Проверка уровня
+        if player_data.get("xp", 0) >= player.get("level", 1) * 50:
+            player_data["level"] = player.get("level", 1) + 1
+            player_data["xp"] = 0
+            player_data["max_hp"] = player.get("max_hp", 100) + 10
+            player_data["hp"] = player.get("max_hp", 100) + 10
+            level_up_text = "\n🌟 УРОВЕНЬ ПОВЫШЕН!"
+        else:
+            level_up_text = ""
+    else:
+        # Поражение
+        player_data["losses"] = player.get("losses", 0) + 1
+        target_data["wins"] = target_player.get("wins", 0) + 1
+        target_data["xp"] = target_player.get("xp", 0) + 10
+        heal_drop_text = ""
+        level_up_text = ""
+    
+    # Обновление данных
+    update_player(uid, player_data)
+    update_player(target_uid, target_data)
+    
+    # Формирование ответа
+    response = (
+        f"⚔️ ДУЭЛЬ!\n"
+        f"{player.get('pet_emoji', '🐉')} {player.get('pet_name', 'Питомец')} VS {target_username}\n\n"
+        f"💥 Урон: {damage}{crit_text}{knockout_text}\n"
+        f"❤️ HP {target_username}: {target_player.get('hp', 100)} → {new_hp}\n"
+        f"{heal_drop_text}"
+        f"{level_up_text}"
+    )
+    
+    await message.reply(response)
+    logger.info(f"Бой: {uid} vs {target_uid}, урон: {damage}")
 async def top_cmd(message: types.Message):
     players = get_top_players(10)
     
