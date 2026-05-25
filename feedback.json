@@ -8,5 +8,10 @@
     "text": "Добавь docstring во все функции без документации: start_cmd, egg_cmd, feed_cmd, train_cmd, battle_cmd, top_cmd, stats_cmd, help_cmd. По образцу incubate_cmd: описание, Args, Returns.",
     "author": "admin",
     "timestamp": "2026-05-25T07:20:14.138581+00:00"
+  },
+  {
+    "text": "Во всех функциях замени прямое обращение к ключам (player[\"hunger\"]) на player.get(\"hunger\", 0). Добавь константы для магических чисел (100 для голода, 50 для опыта). Добавь логирование действий как в incubate_cmd.",
+    "author": "admin",
+    "timestamp": "2026-05-25T07:20:19.347909+00:00"
   }
 ]
