@@ -397,66 +397,80 @@ async def incubate_cmd(message: types.Message):
 async def feed_cmd(message: types.Message):
     """
     Обрабатывает команду /feed — кормление питомца.
-    Восстанавливает голод, HP и настроение в зависимости от текущего состояния.
+    
+    Логика восстановления: питомец получает +40 к сытости,
+    +10 к здоровью и +15 к настроению, но не выше максимумов.
+    Если питомец не вылупился (hatched=False), кормление невозможно.
     
     Параметры:
-        message (types.Message): сообщение от пользователя с командой /feed
-        
-    Возвращаемое значение:
-        None (отправляет ответное сообщение через message.reply)
-        
-    Логирование:
-        - INFO: успешное кормление
-        - WARNING: кормление при нулевом голоде
-        - ERROR: ошибки БД или валидации
+        message (types.Message): сообщение от пользователя, должно содержать user_id
+    
+    Возвращает:
+        None: отправляет ответное сообщение пользователю
     """
-    # Константы для регулировки кормления
-    HUNGER_RESTORE = 30
-    HP_RESTORE = 10
-    MOOD_RESTORE = 15
-    MAX_HUNGER = 100
-    MAX_MOOD = 100
-    MIN_HUNGER_FOR_FEED = 5  # не кормим если голод < 5 (почти сыт)
+    # Именованные константы для магических чисел
+    FEED_HUNGER_RESTORE = 40
+    FEED_HP_RESTORE = 10
+    FEED_MOOD_RESTORE = 15
+    FEED_HUNGER_MAX = 100
+    FEED_MOOD_MAX = 100
     
-    uid = str(message.from_user.id)
+    user_id = str(message.from_user.id)
+    logger.info(f"Пользователь {user_id} вызывает команду /feed")
     
-    # 1. Валидация: проверяем существование игрока
-    player = get_player(uid)
+    # Валидация входных данных
+    if not message.from_user or not message.from_user.id:
+        error_msg = "❌ Ошибка: не удалось определить пользователя"
+        logger.error(f"Ошибка валидации пользователя в feed_cmd: message.from_user={message.from_user}")
+        await message.reply(error_msg)
+        return
+    
+    player = get_player(user_id)
+    
+    # Проверка существования игрока
     if player is None:
-        logger.warning(f"Попытка кормления несуществующего игрока: {uid}")
-        await message.reply("❌ <b>Ты ещё не создал питомца!</b>\nНапиши /egg, чтобы получить яйцо.")
+        error_msg = "❕ Сначала получи яйцо: /egg"
+        logger.warning(f"Пользователь {user_id} вызвал /feed без создания игрока")
+        await message.reply(error_msg)
         return
     
-    # 2. Проверка: вылупился ли питомец
+    # Проверка вылупления питомца
     if not player.get("hatched", False):
-        logger.info(f"Кормление яйца игроком {uid} — отказ (ещё не вылупилось)")
-        await message.reply("🥚 <b>Твой питомец ещё в яйце!</b>\nИспользуй /incubate, чтобы высидеть его.")
+        error_msg = "🥚 Твой питомец ещё не вылупился! Используй /incubate"
+        logger.info(f"Пользователь {user_id} пытался покормить невылупившегося питомца")
+        await message.reply(error_msg)
         return
     
-    # 3. Проверка на крайний случай: голод уже на минимуме
-    current_hunger = player.get("hunger", 0)
-    if current_hunger < MIN_HUNGER_FOR_FEED:
-        logger.info(f"Питомец {player.get('pet_name', '?')} (id={uid}) уже сыт, голод={current_hunger}")
-        await message.reply(
-            f"🍖 <b>{player.get('pet_emoji', '🐉')} {player.get('pet_name', 'Питомец')}</b> уже сыт! "
-            f"Голод: {current_hunger}/{MAX_HUNGER}."
-        )
+    # Проверка что данные не None для ключевых полей
+    current_hunger = player.get("hunger")
+    current_hp = player.get("hp")
+    current_mood = player.get("mood")
+    max_hp = player.get("max_hp")
+    
+    if None in (current_hunger, current_hp, current_mood, max_hp):
+        error_msg = "❌ Ошибка данных питомца: повреждён профиль"
+        logger.error(f"Пользователь {user_id} имеет некорректные данные: hunger={current_hunger}, hp={current_hp}, mood={current_mood}, max_hp={max_hp}")
+        await message.reply(error_msg)
         return
     
-    # 4. Вычисляем новые значения с ограничениями
-    new_hunger = min(current_hunger + HUNGER_RESTORE, MAX_HUNGER)
+    # Обработка крайнего случая: если сытость уже максимальная
+    if current_hunger >= FEED_HUNGER_MAX:
+        info_msg = "🍖 Питомец сыт по горло! Ему пока не нужно есть."
+        logger.info(f"Пользователь {user_id} попытался покормить сытого питомца (hunger={current_hunger})")
+        await message.reply(info_msg)
+        return
     
-    current_hp = player.get("hp", 0)
-    max_hp = player.get("max_hp", 100)
-    new_hp = min(current_hp + HP_RESTORE, max_hp)
+    # Восстановление параметров с ограничением максимумов
+    new_hunger = min(current_hunger + FEED_HUNGER_RESTORE, FEED_HUNGER_MAX)
+    new_hp = min(current_hp + FEED_HP_RESTORE, max_hp)
+    new_mood = min(current_mood + FEED_MOOD_RESTORE, FEED_MOOD_MAX)
     
-    current_mood = player.get("mood", 0)
-    new_mood = min(current_mood + MOOD_RESTORE, MAX_MOOD)
+    # Обработка крайнего случая: предотвращение отрицательного HP
+    if new_hp < 0:
+        logger.error(f"Пользователь {user_id}: расчётный HP < 0 ({new_hp}), исправлено на 0")
+        new_hp = 0
     
-    # 5. Логирование и обновление
-    pet_name = player.get("pet_name", "Питомец")
-    pet_emoji = player.get("pet_emoji", "🐉")
-    
+    # Обновление в базе
     update_data = {
         "hunger": new_hunger,
         "hp": new_hp,
@@ -464,31 +478,26 @@ async def feed_cmd(message: types.Message):
     }
     
     try:
-        update_player(uid, update_data)
-        logger.info(
-            f"Кормление питомца {pet_name} (id={uid}): "
-            f"голод {current_hunger}→{new_hunger}, "
-            f"HP {current_hp}→{new_hp}, "
-            f"настроение {current_mood}→{new_mood}"
-        )
+        update_player(user_id, update_data)
+        logger.info(f"Пользователь {user_id} покормил питомца: hunger {current_hunger}->{new_hunger}, hp {current_hp}->{new_hp}, mood {current_mood}->{new_mood}")
     except Exception as e:
-        logger.error(f"Ошибка обновления БД при кормлении игрока {uid}: {e}")
-        await message.reply("❌ <b>Ошибка базы данных!</b>\nПопробуй ещё раз.")
+        error_msg = "❌ Ошибка при сохранении данных. Попробуй позже."
+        logger.error(f"Ошибка update_player для пользователя {user_id}: {e}")
+        await message.reply(error_msg)
         return
     
-    # 6. Формируем ответ
-    response_parts = [
-        f"🍖 <b>{pet_emoji} {pet_name}</b> с удовольствием поел!",
-        "",
-        f"❤️ HP: {current_hp} → {new_hp}/{max_hp}",
-        f"🍞 Голод: {current_hunger} → {new_hunger}/{MAX_HUNGER}",
-        f"😊 Настроение: {current_mood} → {new_mood}/{MAX_MOOD}"
-    ]
+    # Формирование ответа
+    emoji = player.get("pet_emoji", "🐾")
+    name = player.get("pet_name", "Питомец")
     
-    if new_hunger >= MAX_HUNGER:
-        response_parts.append(f"\n🥴 {pet_emoji} {pet_name} объелся! Больше не влезет.")
+    reply_message = (
+        f"🍖 {emoji} <b>{name}</b> сытно поел!\n\n"
+        f"❤️ HP: {current_hp} → {new_hp}\n"
+        f"🍽 Сытость: {current_hunger} → {new_hunger}\n"
+        f"😊 Настроение: {current_mood} → {new_mood}"
+    )
     
-    await message.reply("\n".join(response_parts))
+    await message.reply(reply_message)
 async def train_cmd(message: types.Message):
     uid = str(message.from_user.id)
     player = get_player(uid)
