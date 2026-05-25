@@ -775,6 +775,118 @@ async def incubate_cmd(message: types.Message):
         
         await message.reply(response_text, parse_mode="Markdown")
 
+async def top_cmd(message: types.Message):
+    """
+    Обрабатывает команду /top — показывает таблицу лидеров арены.
+    
+    Аргументы:
+        message (types.Message): Исходное сообщение с командой /top
+    
+    Возвращает:
+        None: Результат отправляется в чат
+    """
+    
+    # Константы для функции
+    TOP_PLAYERS_LIMIT = 10  # Количество игроков в топе
+    RATING_EMOJI = {
+        1: "🥇",
+        2: "🥈",
+        3: "🥉"
+    }
+    DEFAULT_EMOJI = "🏅"
+    RATING_LINE = "{emoji} {username}: {wins} побед, {level} уровень"
+    
+    # ============================================================
+    # Валидация входных данных
+    # ============================================================
+    
+    # Проверяем, что message существует и имеет необходимые атрибуты
+    if not message or not hasattr(message, 'from_user'):
+        logger.error("❌ Получен пустой запрос или отсутствует from_user")
+        await message.reply("❌ Произошла внутренняя ошибка. Попробуйте позже.")
+        return
+    
+    # ============================================================
+    # Проверка доступности базы данных
+    # ============================================================
+    
+    if not supabase:
+        logger.error("❌ База данных не подключена")
+        await message.reply("❌ База данных недоступна. Попробуйте позже.")
+        return
+    
+    # ============================================================
+    # Получение данных из базы
+    # ============================================================
+    
+    try:
+        # Запрашиваем топ игроков по количеству побед
+        response = supabase.table("players")\
+            .select("user_id, pet_name, username, wins, level, losses")\
+            .order("wins", desc=True)\
+            .limit(TOP_PLAYERS_LIMIT)\
+            .execute()
+        
+        players = response.data
+        
+        # Обработка пустого результата
+        if not players:
+            logger.info("❌ Таблица лидеров пуста")
+            await message.reply("🏆 *Таблица лидеров* 🏆\n\nПока нет участников. Будьте первым!")
+            return
+        
+        # Фильтрация игроков с нулевыми победами (если есть)
+        players = [p for p in players if p.get('wins', 0) > 0]
+        
+        # Если после фильтрации список пуст
+        if not players:
+            await message.reply("🏆 *Таблица лидеров* 🏆\n\nПока нет участников с победами. Начните бой!")
+            return
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения топа из БД: {e}")
+        await message.reply("❌ Не удалось получить данные. Попробуйте позже.")
+        return
+    
+    # ============================================================
+    # Формирование ответа
+    # ============================================================
+    
+    try:
+        rating_lines = ["🏆 *ТАБЛИЦА ЛИДЕРОВ* 🏆\n", ""]
+        
+        for index, player in enumerate(players, start=1):
+            # Обработка крайних случаев
+            uid = player.get('user_id', '0')
+            username = player.get('username', 'Без имени')
+            wins = player.get('wins', 0)
+            level = player.get('level', 1)
+            
+            # Безопасное получение эмодзи рейтинга
+            rating_emoji = RATING_EMOJI.get(index, DEFAULT_EMOJI)
+            
+            # Формирование строки для каждого игрока
+            line = RATING_LINE.format(
+                emoji=rating_emoji,
+                username=username,
+                wins=wins,
+                level=level
+            )
+            rating_lines.append(line)
+        
+        # Объединение в одну строку
+        rating_text = "\n".join(rating_lines)
+        
+        # Логирование успешного выполнения
+        logger.info(f"✅ Топ-{TOP_PLAYERS_LIMIT} успешно сформирован для пользователя {message.from_user.id}")
+        
+        # Отправка ответа
+        await message.reply(rating_text, parse_mode="Markdown")
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка формирования ответа: {e}")
+        await message.reply("❌ Произошла ошибка при формировании таблицы лидеров.")
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
