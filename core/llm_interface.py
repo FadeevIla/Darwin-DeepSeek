@@ -14,10 +14,13 @@ class LLMInterface:
         )
         self.logger.info("DeepSeek готов")
 
-    def analyze_bugs(self, code):
+    def analyze_bugs(self, code, feedback_text: str = ""):
         self.logger.info("LLM: поиск багов")
-        from core.feedback import get_feedback_summary
-        feedback = get_feedback_summary()
+        
+        # Используем переданный фидбек вместо загрузки из файла
+        feedback = feedback_text if feedback_text else "Пожеланий пока нет."
+        if feedback_text:
+            self.logger.info(f"📝 Получен фидбек: {feedback[:100]}...")
 
         system_prompt = (
             "Ты — senior Python-разработчик уровня Senior/Lead в enterprise-компании.\n"
