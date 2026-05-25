@@ -1078,6 +1078,186 @@ async def battle_cmd(message: types.Message):
         f"Урон: {damage}"
     )
 
+async def incubate_cmd(message: types.Message):
+    """
+    Команда /incubate — высиживание яйца Тамагочи.
+    
+    Процесс высиживания:
+    - Требуется наличие невысиженного яйца (hatched = False)
+    - Каждое использование увеличивает прогресс на INCUBATE_STEP
+    - При достижении INCUBATE_MAX_PROGRESS яйцо вылупляется, создаётся питомец
+    - Если яйцо уже высижено — сообщение об ошибке
+    - Если питомец уже есть — предложение использовать другие команды
+    
+    Константы:
+        INCUBATE_STEP: шаг прогресса за одно использование (int)
+        INCUBATE_MAX_PROGRESS: максимальный прогресс для вылупления (int)
+        MIN_PROGRESS: минимальное значение прогресса (int)
+        MAX_EGG_PROGRESS: максимальное допустимое значение прогресса (int)
+    """
+    # Константы
+    INCUBATE_STEP = 20
+    INCUBATE_MAX_PROGRESS = 100
+    MIN_PROGRESS = 0
+    MAX_EGG_PROGRESS = 100
+    
+    uid = str(message.from_user.id)
+    logger.info(f"Пользователь {uid} запустил высиживание яйца")
+    
+    try:
+        # Валидация входных данных
+        if not message.from_user.id:
+            logger.error(f"Некорректный ID пользователя: {message.from_user.id}")
+            await message.reply("❌ Ошибка: некорректные данные пользователя")
+            return
+        
+        # Загрузка данных игрока
+        player = get_player(uid)
+        logger.debug(f"Загружены данные игрока {uid}: {player}")
+        
+        # Проверка существования игрока
+        if not player:
+            logger.warning(f"Игрок {uid} не найден, создаю нового")
+            player = create_player(uid)
+            if not player:
+                logger.error(f"Не удалось создать игрока {uid}")
+                await message.reply("❌ Ошибка при создании профиля. Попробуйте позже.")
+                return
+            await message.reply("🌱 Новый игрок создан! Используйте /egg для получения яйца.")
+            return
+        
+        # Проверка валидности данных игрока
+        if not all(key in player for key in ['hatched', 'inc_progress', 'egg_type']):
+            logger.error(f"Некорректная структура данных игрока {uid}: {player}")
+            await message.reply("❌ Ошибка: повреждённые данные профиля. Обратитесь к администратору.")
+            return
+        
+        # Проверка, что игрок ещё не вылупил питомца
+        if player.get('hatched', False):
+            logger.info(f"Игрок {uid} уже имеет вылупившегося питомца")
+            player_data = player
+            pet_name = player_data.get('pet_name', 'Питомец')
+            pet_emoji = player_data.get('pet_emoji', '🐉')
+            
+            # Безопасное получение статистики с проверкой значений
+            hp = int(player_data.get('hp', 0))
+            max_hp = int(player_data.get('max_hp', 100))
+            hunger = int(player_data.get('hunger', 50))
+            mood = player_data.get('mood', 'спокойное')
+            level = int(player_data.get('level', 1))
+            xp = int(player_data.get('xp', 0))
+            
+            await message.reply(
+                f"🌞 У тебя уже есть питомец!\n"
+                f"{pet_emoji} {pet_name}\n"
+                f"❤️ HP: {hp}/{max_hp}\n"
+                f"🍔 Голод: {hunger}%\n"
+                f"😊 Настроение: {mood}\n"
+                f"⭐ Уровень: {level}, XP: {xp}\n\n"
+                f"Попробуй команды:\n"
+                f"/feed — покормить\n"
+                f"/train — тренировать\n"
+                f"/battle — сразиться\n"
+                f"/stats — полная статистика"
+            )
+            return
+        
+        # Проверка наличия яйца
+        if not player.get('egg_type'):
+            logger.info(f"У игрока {uid} нет яйца")
+            await message.reply("🥚 У тебя пока нет яйца! Используй /egg, чтобы получить его.")
+            return
+        
+        # Валидация текущего прогресса
+        current_progress = int(player.get('inc_progress', MIN_PROGRESS))
+        if current_progress < MIN_PROGRESS or current_progress > MAX_EGG_PROGRESS:
+            logger.warning(f"Некорректный прогресс высиживания у {uid}: {current_progress}, сбрасываю")
+            current_progress = MIN_PROGRESS
+        
+        # Увеличение прогресса
+        new_progress = current_progress + INCUBATE_STEP
+        
+        # Проверка на переполнение
+        if new_progress > MAX_EGG_PROGRESS:
+            new_progress = MAX_EGG_PROGRESS
+        
+        logger.info(f"Прогресс высиживания {uid}: {current_progress} -> {new_progress} ({INCUBATE_STEP}%)")
+        
+        # Обновление прогресса
+        try:
+            update_player(uid, {'inc_progress': new_progress})
+            logger.debug(f"Прогресс высиживания обновлён для {uid}: {new_progress}")
+        except Exception as e:
+            logger.error(f"Ошибка обновления прогресса высиживания {uid}: {e}")
+            await message.reply("❌ Ошибка при сохранении прогресса. Попробуйте позже.")
+            return
+        
+        # Проверка на вылупление
+        if new_progress >= INCUBATE_MAX_PROGRESS:
+            logger.info(f"Яйцо {uid} вылупилось!")
+            
+            # Создание питомца при вылуплении
+            pet = random_pet()
+            player_data = {
+                "pet_name": pet["name"],
+                "pet_emoji": pet["emoji"],
+                "hp": pet["hp"], "max_hp": pet["max_hp"],
+                "strength": pet["strength"], "agility": pet["agility"],
+                "magic": pet["magic"], "defense": pet["defense"],
+                "speed": pet["speed"], "hunger": pet["hunger"],
+                "mood": pet["mood"], "level": pet["level"],
+                "xp": pet["xp"], "wins": pet["wins"], "losses": pet["losses"],
+                "egg_type": "обычное", "hatched": True,
+            }
+            
+            try:
+                update_player(uid, player_data)
+                logger.info(f"Питомец создан для {uid}: {pet['name']} {pet['emoji']}")
+            except Exception as e:
+                logger.error(f"Ошибка создания питомца при вылуплении {uid}: {e}")
+                await message.reply("❌ Ошибка при создании питомца. Попробуйте позже.")
+                return
+            
+            # Безопасное форматирование ответа
+            msg = (
+                f"🎉 Яйцо <b>вылупилось!</b>\n"
+                f"{pet['emoji']} <b>{pet['name']}</b>\n\n"
+                f"❤️ HP: {pet['hp']}/{pet['max_hp']}\n"
+                f"⚔️ Сила: {pet['strength']}\n"
+                f"🏃 Скорость: {pet['speed']}\n"
+                f"🛡️ Защита: {pet['defense']}\n"
+                f"🍔 Голод: {pet['hunger']}%\n"
+                f"😊 Настроение: {pet['mood']}\n\n"
+                f"Покорми его: /feed\n"
+                f"Тренируй: /train\n"
+                f"Сражайся: /battle"
+            )
+            await message.reply(msg, parse_mode='HTML')
+            
+        else:
+            # Яйцо ещё не вылупилось
+            eggs_remaining = max(0, (INCUBATE_MAX_PROGRESS - new_progress) // INCUBATE_STEP)
+            
+            # Безопасное форматирование прогресс-бара
+            bar_length = 10
+            filled = int((new_progress / INCUBATE_MAX_PROGRESS) * bar_length)
+            filled = max(0, min(filled, bar_length))  # Ограничение от 0 до bar_length
+            empty = bar_length - filled
+            progress_bar = '█' * filled + '░' * empty
+            
+            msg = (
+                f"🥚 Высиживание яйца...\n"
+                f"{progress_bar} {new_progress}/{INCUBATE_MAX_PROGRESS}%\n"
+                f"Осталось примерно {eggs_remaining} использований\n\n"
+                f"Используй /incubate, чтобы продолжить!"
+            )
+            await message.reply(msg)
+            logger.info(f"Прогресс высиживания для {uid}: {new_progress}/{INCUBATE_MAX_PROGRESS}")
+    
+    except Exception as e:
+        logger.error(f"Критическая ошибка в incubate_cmd для {uid}: {e}")
+        await message.reply("❌ Произошла непредвиденная ошибка. Попробуйте позже.")
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
