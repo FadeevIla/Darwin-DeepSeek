@@ -1,1 +1,7 @@
-[]
+[
+  {
+    "text": "Добавь в начало КАЖДОЙ команды проверку: if message.from_user.is_bot or message.sender_chat: return. Это запретит ботам и каналам использовать команды бота.",
+    "author": "admin",
+    "timestamp": "2026-05-25T18:54:40.438275+00:00"
+  }
+]
