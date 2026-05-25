@@ -1354,6 +1354,134 @@ async def incubate_cmd(message: types.Message):
         logger.error(f"Неожиданная ошибка инкубации для игрока {user_id}: {e}")
         await message.reply("❌ Произошла ошибка. Попробуйте позже.")
 
+async def train_cmd(message: types.Message):
+    """
+    Тренировка питомца: повышает случайную характеристику.
+    Каждая тренировка уменьшает сытость (-20) и увеличивает усталость (-5 HP).
+    Требует: питомец высижен, сытость > 20, HP > 10.
+    
+    Характеристики для улучшения: сила, ловкость, магия, защита, скорость.
+    Шанс на улучшение: 70% успех, 30% неудача (потрачена энергия, но без прироста).
+    
+    Args:
+        message (types.Message): Команда /train
+    
+    Returns:
+        None: Отправляет ответ пользователю через message.reply
+    
+    Raises:
+        Exception: При ошибках БД или невалидном состоянии игрока
+    """
+    # Константы функции
+    HUNGER_COST = 20
+    HP_COST = 5
+    SUCCESS_CHANCE = 0.70
+    STAT_INCREASE_MIN = 1
+    STAT_INCREASE_MAX = 3
+    MIN_HUNGER_TO_TRAIN = 20
+    MIN_HP_TO_TRAIN = 10
+    STATS = ["strength", "agility", "magic", "defense", "speed"]
+    STAT_NAMES = {
+        "strength": "Сила",
+        "agility": "Ловкость",
+        "magic": "Магия",
+        "defense": "Защита",
+        "speed": "Скорость"
+    }
+    
+    user_id = str(message.from_user.id)
+    
+    try:
+        # Валидация: получаем игрока
+        player = get_player(user_id)
+        if not player:
+            await message.reply("❌ Сначала создай питомца через /start!")
+            logger.warning(f"Пользователь {user_id} попытался тренироваться без питомца")
+            return
+        
+        # Проверка: питомец высижен
+        if not player.get("hatched", False):
+            await message.reply("🥚 Сначала высиди яйцо через /incubate!")
+            return
+        
+        # Валидация: достаточно сытости
+        if player.get("hunger", 100) < MIN_HUNGER_TO_TRAIN:
+            await message.reply(f"🍽️ Слишком голоден! Нужно хотя бы {MIN_HUNGER_TO_TRAIN} сытости (сейчас {player['hunger']}). Покорми через /feed.")
+            logger.info(f"Пользователь {user_id} не может тренироваться: недостаточно сытости ({player['hunger']})")
+            return
+        
+        # Валидация: достаточно HP
+        if player.get("hp", 100) <= MIN_HP_TO_TRAIN:
+            await message.reply(f"💔 Слишком устал! Нужно хотя бы {MIN_HP_TO_TRAIN + 1} HP (сейчас {player['hp']}). Отдохни или съешь что-то.")
+            logger.info(f"Пользователь {user_id} не может тренироваться: недостаточно HP ({player['hp']})")
+            return
+        
+        # Выбираем случайную характеристику
+        stat_to_upgrade = random.choice(STATS)
+        stat_name = STAT_NAMES[stat_to_upgrade]
+        
+        # Определяем успех тренировки
+        training_success = random.random() < SUCCESS_CHANCE
+        
+        # Подготовка данных для обновления
+        update_data = {}
+        
+        # Обновляем сытость (не ниже 0)
+        new_hunger = max(0, player["hunger"] - HUNGER_COST)
+        update_data["hunger"] = new_hunger
+        
+        # Обновляем HP (не ниже 0)
+        new_hp = max(0, player["hp"] - HP_COST)
+        update_data["hp"] = new_hp
+        
+        # Результат тренировки
+        stat_increase = 0
+        if training_success:
+            stat_increase = random.randint(STAT_INCREASE_MIN, STAT_INCREASE_MAX)
+            current_stat_value = player.get(stat_to_upgrade, 0)
+            update_data[stat_to_upgrade] = current_stat_value + stat_increase
+            
+            # Добавляем XP за успешную тренировку
+            xp_gain = 5
+            new_xp = player.get("xp", 0) + xp_gain
+            update_data["xp"] = new_xp
+            
+            logger.info(f"Пользователь {user_id}: тренировка успешна. {stat_name} +{stat_increase}, XP +{xp_gain}")
+        else:
+            logger.info(f"Пользователь {user_id}: тренировка неудачна")
+        
+        # Обновляем БД
+        update_player(user_id, update_data)
+        
+        # Формируем ответ
+        pet_name = player.get("pet_name", "Питомец")
+        pet_emoji = player.get("pet_emoji", "🐉")
+        
+        if training_success:
+            response_text = (
+                f"{pet_emoji} {pet_name} усердно тренируется!\n\n"
+                f"✅ Тренировка успешна!\n"
+                f"📈 {stat_name} повышена на {stat_increase}!\n"
+                f"🌟 Получено очков опыта: 5\n"
+                f"🍽️ Сытость: {new_hunger}\n"
+                f"💔 HP: {new_hp}"
+            )
+        else:
+            response_text = (
+                f"{pet_emoji} {pet_name} тренируется, но...\n\n"
+                f"😩 Тренировка неудачна. Характеристики не изменились.\n"
+                f"🍽️ Сытость: {new_hunger}\n"
+                f"💔 HP: {new_hp}\n\n"
+                f"Попробуй ещё раз!"
+            )
+        
+        await message.reply(response_text)
+        logger.debug(f"Тренировка для {user_id}: {stat_to_upgrade}, успех={training_success}, сытость={new_hunger}, HP={new_hp}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка в train_cmd для {user_id}: {e}", exc_info=True)
+        await message.reply("❌ Произошла ошибка. Попробуй позже или сообщи администратору.")
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
