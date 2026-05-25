@@ -1258,6 +1258,102 @@ async def incubate_cmd(message: types.Message):
         logger.error(f"Критическая ошибка в incubate_cmd для {uid}: {e}")
         await message.reply("❌ Произошла непредвиденная ошибка. Попробуйте позже.")
 
+async def incubate_cmd(message: types.Message):
+    """Инкубирует яйцо питомца, увеличивая прогресс инкубации.
+    
+    При достижении 100% прогресса яйцо вылупляется, и питомец становится доступен.
+    Для инкубации требуется, чтобы у игрока было яйцо (hatched=False).
+    
+    Args:
+        message: Сообщение от пользователя с командой /incubate
+        
+    Returns:
+        None: Отправляет ответ пользователю через message.reply()
+    """
+    MAX_INCUBATION_PROGRESS = 100
+    INCUBATION_STEP = random.randint(10, 25)
+    MIN_LEVEL_FOR_INCUBATION = 1
+    
+    try:
+        user_id = str(message.from_user.id)
+        player = get_player(user_id)
+        
+        # Валидация: проверяем существование игрока
+        if not player:
+            await message.reply(
+                "❌ У вас нет питомца! Используйте /start, чтобы создать его."
+            )
+            return
+        
+        # Валидация: проверяем, что у игрока есть яйцо
+        if player.get("hatched", True):
+            await message.reply(
+                "🥚 Ваш питомец уже вылупился! Инкубация не требуется."
+            )
+            return
+        
+        # Валидация: проверяем уровень игрока
+        current_level = player.get("level", MIN_LEVEL_FOR_INCUBATION)
+        if current_level < MIN_LEVEL_FOR_INCUBATION:
+            await message.reply(
+                f"❌ Для инкубации нужен уровень {MIN_LEVEL_FOR_INCUBATION}. "
+                f"Ваш уровень: {current_level}. Тренируйтесь!"
+            )
+            return
+        
+        # Получаем текущий прогресс инкубации
+        current_progress = player.get("inc_progress", 0)
+        
+        # Проверяем, не завершена ли уже инкубация
+        if current_progress >= MAX_INCUBATION_PROGRESS:
+            # Вылупляем питомца
+            update_player(user_id, {
+                "hatched": True,
+                "inc_progress": MAX_INCUBATION_PROGRESS
+            })
+            await message.reply(
+                f"🎉 Яйцо вылупилось! Поздравляю с новым питомцем!\n"
+                f"🐣 {player.get('pet_emoji', '❓')} {player.get('pet_name', 'Питомец')} появился на свет!"
+            )
+            logger.info(f"Игрок {user_id} вылупил питомца")
+            return
+        
+        # Рассчитываем новый прогресс
+        new_progress = min(current_progress + INCUBATION_STEP, MAX_INCUBATION_PROGRESS)
+        
+        # Обновляем прогресс в базе данных
+        update_player(user_id, {"inc_progress": new_progress})
+        
+        # Формируем ответ с визуализацией прогресса
+        progress_bar_length = 10
+        filled_bars = int(new_progress / MAX_INCUBATION_PROGRESS * progress_bar_length)
+        empty_bars = progress_bar_length - filled_bars
+        progress_bar = "█" * filled_bars + "░" * empty_bars
+        
+        await message.reply(
+            f"🥚 Инкубация яйца...\n\n"
+            f"Прогресс: {new_progress}%\n"
+            f"{progress_bar}\n\n"
+            f"➕ Добавлено: +{INCUBATION_STEP}%\n"
+            f"Осталось: {MAX_INCUBATION_PROGRESS - new_progress}%\n\n"
+            f"💡 Продолжайте инкубировать, чтобы питомец вылупился!"
+        )
+        
+        logger.info(
+            f"Игрок {user_id} инкубировал яйцо: "
+            f"{current_progress}% -> {new_progress}%"
+        )
+        
+    except KeyError as e:
+        logger.error(f"Ошибка доступа к данным игрока {user_id}: {e}")
+        await message.reply("❌ Ошибка в данных игрока. Попробуйте позже.")
+    except ValueError as e:
+        logger.error(f"Ошибка преобразования данных для игрока {user_id}: {e}")
+        await message.reply("❌ Ошибка обработки данных. Попробуйте позже.")
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка инкубации для игрока {user_id}: {e}")
+        await message.reply("❌ Произошла ошибка. Попробуйте позже.")
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
