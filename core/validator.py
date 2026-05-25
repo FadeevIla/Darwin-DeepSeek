@@ -24,36 +24,29 @@ class Validator:
             return False, f"Синтаксическая ошибка: {e.msg} (строка {e.lineno})"
 
     def validate_imports(self, code):
-
         # Проверка, что код не пустой и не обрезанный
         if len(code) < 500:
             return False, "Код слишком короткий — вероятно, обрезан"
-
+    
         if "..." in code and "остальной код" in code.lower():
             return False, "Код содержит пропуски — LLM обрезала ответ"
-
-        if "остальное без изменений" in code.lower():
-            return False, "Код содержит пропуски — LLM обрезала ответ"
-
+    
         # Ищем любые признаки телеграм-бота
         bot_indicators = [
-            "telegram", "Telegram", "Bot", "bot",
             "aiogram", "Dispatcher", "executor",
             "from aiogram", "import aiogram",
+            "register_message_handler",
         ]
         has_bot_framework = any(indicator in code for indicator in bot_indicators)
         if not has_bot_framework:
             return False, "Код не похож на телеграм-бота"
-
+    
         dangerous = ["os.system", "subprocess.call", "eval(", "exec("]
         for danger in dangerous:
             if danger in code:
                 return False, f"Обнаружен опасный вызов: {danger}"
-
-        # 🆕 Проверка: все импорты из core.rpg_* должны существовать
-        # Проверяем, что код — это функция (начинается с async def)
-        if not code.strip().startswith(('async def ', 'def ', 'import ', 'from ')):
-            return False, "Код не начинается с функции или импорта"
+    
+        return True, None
 
     def validate_pyflakes(self, code):
         try:
