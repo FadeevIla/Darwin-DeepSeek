@@ -66,6 +66,19 @@ def create_player(uid: str) -> dict | None:
         logger.error(f"Ошибка создания игрока: {e}")
         return None
 
+def get_player_by_username(username: str) -> dict | None:
+    """Ищет игрока по username в Supabase."""
+    if not supabase:
+        return None
+    try:
+        # Убираем @ если есть
+        clean_username = username.replace('@', '').strip()
+        response = supabase.table("players").select("*").eq("username", clean_username).execute()
+        return response.data[0] if response.data else None
+    except Exception as e:
+        logger.error(f"Ошибка поиска игрока по username: {e}")
+        return None
+
 def update_player(uid: str, data: dict):
     if not supabase:
         return
@@ -125,8 +138,12 @@ def random_pet() -> dict:
 async def start_cmd(message: types.Message):
     uid = str(message.from_user.id)
     player = get_player(uid)
-    
+
     if player:
+        # Сохраняем username если его нет
+        if not player.get("username") and message.from_user.username:
+            update_player(uid, {"username": message.from_user.username})
+
         await message.reply(
             f"🐉 <b>УРОБОРОС: АРЕНА</b>\n\n"
             f"Твой питомец: {player.get('pet_emoji', '❓')} <b>{player.get('pet_name', 'Неизвестный')}</b>\n"
@@ -582,10 +599,11 @@ async def battle_cmd(message: types.Message):
         target_username = '@' + target_username
     
     try:
-        chat_member = await message.chat.get_member(target_username.replace('@', ''))
-        if not chat_member:
-            await message.reply(f"❌ Игрок {target_username} не найден в этом чате.")
+        target_player = get_player_by_username(target_username)
+        if not target_player:
+            await message.reply(f"❌ Игрок {target_username} не найден. Попроси его написать /start боту.")
             return
+        target_uid = str(target_player["user_id"])
     except Exception as e:
         logger.error(f"Ошибка поиска пользователя: {e}")
         await message.reply(f"❌ Не удалось найти игрока {target_username}.")
