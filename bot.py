@@ -166,81 +166,120 @@ async def egg_cmd(message: types.Message):
 
 async def incubate_cmd(message: types.Message):
     """
-    Обрабатывает команду /incubate — инкубация яйца питомца.
-    При каждом вызове увеличивает прогресс инкубации на 1.
-    После достижения 4/4 яйцо вылупляется, и питомец становится активным.
-    Команда имеет кулдаун 1 час между использованиями.
-
+    Высиживание яйца питомца.
+    
+    Увеличивает счетчик прогресса инкубации (inc_progress) на 1 при каждом вызове.
+    При достижении лимита прогресса питомец вылупляется (hatched=True).
+    
     Args:
-        message (types.Message): Сообщение от пользователя с командой /incubate
-
+        message (types.Message): Сообщение от пользователя, содержит chat.id как идентификатор.
+    
     Returns:
-        None
+        None: Отправляет ответ пользователю через message.reply().
+    
+    Raises:
+        Не генерирует исключений напрямую; ошибки БД обрабатываются внутри.
     """
-    COOLDOWN_HOURS = 1
-    MAX_INC_PROGRESS = 4
-    COOLDOWN_SECONDS = COOLDOWN_HOURS * 3600
-
-    uid = str(message.from_user.id)
-    player = get_player(uid)
-
-    if not player:
-        player = create_player(uid)
-        if not player:
-            await message.reply("❌ Не удалось создать профиль. Попробуйте позже.")
-            return
-
-    # Проверка кулдауна
-    last_incubate = player.get("last_incubate")
-    if last_incubate:
-        try:
-            last_time = datetime.fromisoformat(last_incubate)
-            now = datetime.now(timezone.utc)
-            elapsed = (now - last_time).total_seconds()
-            if elapsed < COOLDOWN_SECONDS:
-                remaining = int(COOLDOWN_SECONDS - elapsed)
-                hours = remaining // 3600
-                minutes = (remaining % 3600) // 60
-                await message.reply(
-                    f"⏳ Подождите ещё {hours}ч {minutes}мин перед следующей инкубацией!"
-                )
-                return
-        except (ValueError, TypeError) as e:
-            logger.error(f"Ошибка парсинга last_incubate: {e}")
-
-    # Если питомец уже вылупился
-    if player.get("hatched", False):
-        await message.reply("🥚 Ваш питомец уже вылупился! Используйте /stats для просмотра.")
+    # Константы инкубации
+    MAX_INC_PROGRESS = 4          # Максимальное количество этапов инкубации
+    PROGRESS_INCREMENT = 1        # На сколько увеличивается прогресс за один вызов
+    PROGRESS_MIN_VALUE = 0        # Минимальное значение прогресса (для валидации)
+    HP_AFTER_HATCH = 100          # Начальное HP после вылупления
+    HUNGER_AFTER_HATCH = 50       # Начальный голод после вылупления
+    MOOD_AFTER_HATCH = 50         # Начальное настроение после вылупления
+    
+    user_id = str(message.chat.id)
+    
+    # Валидация: проверяем тип chat.id
+    if not isinstance(message.chat.id, int) or message.chat.id <= 0:
+        await message.reply("❌ Некорректный идентификатор пользователя.")
+        logger.error(f"Некорректный chat.id: {message.chat.id} (тип: {type(message.chat.id)})")
         return
-
-    # Увеличиваем прогресс инкубации
-    current_progress = player.get("inc_progress", 0)
-    new_progress = current_progress + 1
-
-    # Обновляем данные в базе
-    update_data = {
-        "inc_progress": new_progress,
-        "last_incubate": datetime.now(timezone.utc).isoformat()
+    
+    logger.info(f"Пользователь {user_id} запускает инкубацию.")
+    
+    # Загружаем данные игрока
+    player = get_player(user_id)
+    
+    # Крайний случай: игрок не найден
+    if player is None:
+        logger.warning(f"Игрок {user_id} не найден в БД при попытке инкубации.")
+        await message.reply("❌ Вы ещё не создали питомца! Используйте /egg.")
+        return
+    
+    # Крайний случай: данные игрока пустые
+    if not isinstance(player, dict):
+        logger.error(f"Некорректные данные игрока {user_id}: {player}")
+        await message.reply("❌ Ошибка загрузки данных. Попробуйте позже.")
+        return
+    
+    # Валидация: проверяем наличие ключевых полей
+    required_fields = ['inc_progress', 'hatched']
+    for field in required_fields:
+        if field not in player:
+            logger.error(f"У игрока {user_id} отсутствует поле '{field}'")
+            await message.reply("❌ Ошибка данных питомца. Попробуйте /start.")
+            return
+    
+    # Крайний случай: питомец уже вылупился
+    if player.get('hatched', False):
+        await message.reply("🐣 Ваш питомец уже вылупился! Используйте /start, чтобы увидеть его.")
+        logger.info(f"Пользователь {user_id} попытался инкубировать уже вылупившегося питомца.")
+        return
+    
+    # Валидация: inc_progress должен быть числом
+    current_progress = player.get('inc_progress', 0)
+    if not isinstance(current_progress, (int, float)):
+        logger.error(f"Некорректное значение inc_progress у игрока {user_id}: {current_progress}")
+        await message.reply("❌ Ошибка данных прогресса. Попробуйте позже.")
+        return
+    
+    # Крайний случай: прогресс меньше минимума (исправляем)
+    if current_progress < PROGRESS_MIN_VALUE:
+        logger.warning(f"Прогресс инкубации игрока {user_id} был отрицательным: {current_progress}. Сброшен до 0.")
+        current_progress = PROGRESS_MIN_VALUE
+    
+    # Крайний случай: прогресс больше или равен максимуму (уже должен вылупиться)
+    if current_progress >= MAX_INC_PROGRESS:
+        # Вылупление
+        update_data = {
+            'hatched': True,
+            'inc_progress': MAX_INC_PROGRESS,
+            'hp': HP_AFTER_HATCH,
+            'hunger': HUNGER_AFTER_HATCH,
+            'mood': MOOD_AFTER_HATCH,
+        }
+        update_player(user_id, update_data)
+        
+        await message.reply(
+            f"🎉 Ваше яйцо вылупилось! Встречайте {player.get('pet_emoji', '🐉')} {player.get('pet_name', 'Питомец')}!\n"
+            f"HP: {HP_AFTER_HATCH} | Голод: {HUNGER_AFTER_HATCH} | Настроение: {MOOD_AFTER_HATCH}"
+        )
+        logger.info(f"Питомец игрока {user_id} вылупился после инкубации (прогресс достиг {MAX_INC_PROGRESS}).")
+        return
+    
+    # Нормальный случай: увеличиваем прогресс
+    new_progress = int(current_progress) + PROGRESS_INCREMENT
+    
+    # Крайний случай: переполнение при сложении
+    if new_progress > MAX_INC_PROGRESS:
+        logger.warning(f"Прогресс инкубации игрока {user_id} превысил максимум: {new_progress}. Установлен на {MAX_INC_PROGRESS}.")
+        new_progress = MAX_INC_PROGRESS
+    
+    # Обновляем прогресс
+    update_player(user_id, {'inc_progress': new_progress})
+    
+    # Определяем стадию для сообщения пользователю
+    stage_messages = {
+        1: "🥚 Яйцо начинает нагреваться... (1/4)",
+        2: "🐣 Внутри яйца слышно шевеление... (2/4)",
+        3: "🐥 Скорлупа покрывается трещинами... (3/4)",
+        4: "🎉 Ещё немного, и питомец вылупится! (4/4)",
     }
-
-    # Проверка на вылупление
-    if new_progress >= MAX_INC_PROGRESS:
-        update_data["hatched"] = True
-        update_data["inc_progress"] = MAX_INC_PROGRESS
-        update_player(uid, update_data)
-        await message.reply(
-            f"🎉 Яйцо вылупилось! Встречайте {player.get('pet_emoji', '🐣')} {player.get('pet_name', 'Питомец')}!\n"
-            f"Используйте /stats для просмотра характеристик."
-        )
-        logger.info(f"Игрок {uid} вылупил питомца {player.get('pet_name')}")
-    else:
-        update_player(uid, update_data)
-        await message.reply(
-            f"🥚 Инкубация: {new_progress}/{MAX_INC_PROGRESS}\n"
-            f"Осталось шагов: {MAX_INC_PROGRESS - new_progress}\n"
-            f"Продолжайте использовать /incubate для ускорения!"
-        )
-        logger.info(f"Игрок {uid} инкубирует яйцо: {new_progress}/{MAX_INC_PROGRESS}")
+    stage_text = stage_messages.get(new_progress, f"🥚 Прогресс инкубации: {new_progress}/{MAX_INC_PROGRESS}")
+    
+    await message.reply(stage_text)
+    logger.info(f"Прогресс инкубации игрока {user_id} увеличен: {current_progress} -> {new_progress}.")
 async def feed_cmd(message: types.Message):
     uid = str(message.from_user.id)
     player = get_player(uid)
