@@ -887,6 +887,197 @@ async def top_cmd(message: types.Message):
         logger.error(f"❌ Ошибка формирования ответа: {e}")
         await message.reply("❌ Произошла ошибка при формировании таблицы лидеров.")
 
+async def battle_cmd(message: types.Message):
+    """Обрабатывает команду /battle — запускает PvP-сражение между питомцами.
+    
+    Игрок указывает никнейм соперника (с @ или без). Если соперник не указан,
+    бой происходит с случайным ботом. Результат боя определяется на основе
+    характеристик питомцев с элементом случайности.
+    
+    Args:
+        message: Объект сообщения от пользователя
+        
+    Returns:
+        None: Результат отправляется в чат через message.reply()
+    """
+    MAX_HP_PERCENT = 0.3  # Максимальный процент HP для победы за один ход
+    MIN_DAMAGE = 1  # Минимальный урон за ход
+    XP_PER_BATTLE = 20  # Базовый опыт за бой
+    XP_WIN_BONUS = 10  # Дополнительный опыт за победу
+    RANDOM_FACTOR = 0.2  # Коэффициент случайности в расчёте урона
+    
+    user_id = str(message.from_user.id)
+    
+    # Получаем данные атакующего
+    attacker = get_player(user_id)
+    if not attacker:
+        await message.reply("❌ Ты ещё не создал питомца! Используй /start")
+        return
+    
+    # Проверяем, вылупился ли питомец
+    if not attacker.get("hatched", False):
+        await message.reply("🥚 Твой питомец ещё не вылупился! Используй /incubate")
+        return
+    
+    # Проверяем, жив ли питомец
+    if attacker.get("hp", 0) <= 0:
+        await message.reply("💀 Твой питомец мёртв! Используй /start для возрождения")
+        return
+    
+    # Парсим аргументы команды
+    args = message.get_args().strip()
+    
+    # Определяем соперника
+    defender = None
+    defender_name = ""
+    
+    if args:
+        # Ищем соперника по username
+        defender = get_player_by_username(args)
+        if not defender:
+            await message.reply(f"👻 Игрок с ником {args} не найден! Убедись, что никнейм правильный.")
+            return
+        defender_name = f"@{defender.get('username', 'Неизвестный')}"
+    else:
+        # Создаём случайного бота-соперника
+        bot_pet = random_pet()
+        defender = {
+            "user_id": 0,
+            "pet_name": bot_pet["name"],
+            "pet_emoji": bot_pet["emoji"],
+            "hp": bot_pet["hp"],
+            "max_hp": bot_pet["max_hp"],
+            "strength": bot_pet["strength"],
+            "agility": bot_pet["agility"],
+            "magic": bot_pet["magic"],
+            "defense": bot_pet["defense"],
+            "speed": bot_pet["speed"],
+            "level": bot_pet["level"],
+            "xp": 0,
+            "wins": 0,
+            "losses": 0
+        }
+        defender_name = f"🤖 {bot_pet['emoji']} {bot_pet['name']}"
+    
+    # Проверяем, что соперник не сам игрок
+    if str(defender.get("user_id", 0)) == user_id:
+        await message.reply("🤔 Нельзя сражаться с самим собой! Найди другого соперника.")
+        return
+    
+    # Проверяем, жив ли соперник
+    if defender.get("hp", 0) <= 0:
+        await message.reply(f"💀 {defender_name} уже мёртв! Выбери другого соперника.")
+        return
+    
+    # Рассчитываем характеристики для боя
+    attacker_power = (
+        attacker.get("strength", 5) * 1.5 +
+        attacker.get("agility", 5) * 1.2 +
+        attacker.get("magic", 5) * 1.3 +
+        attacker.get("speed", 5) * 1.0
+    )
+    
+    defender_power = (
+        defender.get("strength", 5) * 1.5 +
+        defender.get("agility", 5) * 1.2 +
+        defender.get("magic", 5) * 1.3 +
+        defender.get("speed", 5) * 1.0
+    )
+    
+    # Добавляем случайный фактор
+    attacker_power *= 1 + random.uniform(-RANDOM_FACTOR, RANDOM_FACTOR)
+    defender_power *= 1 + random.uniform(-RANDOM_FACTOR, RANDOM_FACTOR)
+    
+    # Определяем победителя
+    attacker_wins = attacker_power > defender_power
+    
+    # Рассчитываем урон
+    if attacker_wins:
+        damage_percent = random.uniform(0.1, MAX_HP_PERCENT)
+        damage = max(MIN_DAMAGE, int(defender.get("max_hp", 100) * damage_percent))
+        defender["hp"] = max(0, defender.get("hp", 100) - damage)
+    else:
+        damage_percent = random.uniform(0.1, MAX_HP_PERCENT)
+        damage = max(MIN_DAMAGE, int(attacker.get("max_hp", 100) * damage_percent))
+        attacker["hp"] = max(0, attacker.get("hp", 100) - damage)
+    
+    # Формируем результат боя
+    attacker_name = f"{attacker.get('pet_emoji', '🐉')} {attacker.get('pet_name', 'Питомец')}"
+    
+    if attacker_wins:
+        # Атакующий победил
+        new_wins = attacker.get("wins", 0) + 1
+        new_losses = defender.get("losses", 0) + 1
+        new_xp = attacker.get("xp", 0) + XP_PER_BATTLE + XP_WIN_BONUS
+        
+        # Обновляем данные атакующего
+        update_player(user_id, {
+            "hp": attacker["hp"],
+            "wins": new_wins,
+            "xp": new_xp
+        })
+        
+        # Обновляем данные соперника (если это реальный игрок)
+        if defender.get("user_id", 0) != 0:
+            update_player(str(defender["user_id"]), {
+                "hp": defender["hp"],
+                "losses": new_losses
+            })
+        
+        result_text = (
+            f"⚔️ **БИТВА НА АРЕНЕ!** ⚔️\n\n"
+            f"{attacker_name} VS {defender_name}\n\n"
+            f"🏆 **ПОБЕДА!** {attacker_name} одержал верх!\n\n"
+            f"📊 **Итоги боя:**\n"
+            f"• Урон сопернику: {damage} HP\n"
+            f"• Осталось HP: {attacker['hp']}/{attacker.get('max_hp', 100)}\n"
+            f"• Получено опыта: +{XP_PER_BATTLE + XP_WIN_BONUS}\n"
+            f"• Побед: {new_wins}"
+        )
+    else:
+        # Атакующий проиграл
+        new_losses = attacker.get("losses", 0) + 1
+        new_wins = defender.get("wins", 0) + 1
+        new_xp = attacker.get("xp", 0) + XP_PER_BATTLE
+        
+        # Обновляем данные атакующего
+        update_player(user_id, {
+            "hp": attacker["hp"],
+            "losses": new_losses,
+            "xp": new_xp
+        })
+        
+        # Обновляем данные соперника (если это реальный игрок)
+        if defender.get("user_id", 0) != 0:
+            update_player(str(defender["user_id"]), {
+                "hp": defender["hp"],
+                "wins": new_wins
+            })
+        
+        result_text = (
+            f"⚔️ **БИТВА НА АРЕНЕ!** ⚔️\n\n"
+            f"{attacker_name} VS {defender_name}\n\n"
+            f"💔 **ПОРАЖЕНИЕ!** {attacker_name} проиграл бой!\n\n"
+            f"📊 **Итоги боя:**\n"
+            f"• Получено урона: {damage} HP\n"
+            f"• Осталось HP: {attacker['hp']}/{attacker.get('max_hp', 100)}\n"
+            f"• Получено опыта: +{XP_PER_BATTLE}\n"
+            f"• Поражений: {new_losses}"
+        )
+    
+    # Проверяем, не умер ли питомец
+    if attacker["hp"] <= 0:
+        result_text += "\n\n💀 **Твой питомец пал в бою!** Используй /start для возрождения."
+    
+    await message.reply(result_text)
+    
+    # Логируем бой
+    logger.info(
+        f"Бой: {attacker_name} vs {defender_name} | "
+        f"Победитель: {'Атакующий' if attacker_wins else 'Соперник'} | "
+        f"Урон: {damage}"
+    )
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
