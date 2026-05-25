@@ -154,21 +154,30 @@ class DarwinOrchestrator:
         func_name = func_match.group(1)
         self.logger.info(f"Применяю патч для функции: {func_name}")
         
-        # Ищем функцию в оригинальном коде
-        pattern = r'(async def ' + func_name + r'\(.*?\n(?:\s+.*\n)*)'
-        original_func_match = re.search(pattern, original_code)
+        # Ищем функцию в оригинальном коде (от async def до следующей async def или конца)
+        pattern = r'(async def ' + func_name + r'\(.*?\n(?:\s+.*\n)*?)(?=\nasync def |\nif __name__|\Z)'
+        original_func_match = re.search(pattern, original_code, re.DOTALL)
         
         if not original_func_match:
             self.logger.error(f"Функция {func_name} не найдена в оригинальном коде")
             return None
         
         # Заменяем старую функцию на новую
-        patched_code = original_code.replace(original_func_match.group(1), new_code.strip())
+        old_func = original_func_match.group(1)
+        new_func_clean = new_code.strip()
+        
+        patched_code = original_code.replace(old_func, new_func_clean)
         
         if patched_code == original_code:
-            self.logger.warning("Патч не изменил код")
+            self.logger.warning("Патч не изменил код — возможно, функция не найдена")
             return None
-            
+        
+        # Проверяем, что результат начинается с импорта
+        if not patched_code.strip().startswith(('import', 'from', '#', '"""')):
+            self.logger.error("После патча код не начинается с импорта!")
+            return None
+        
+        self.logger.info(f"Патч успешно применён, размер: {len(patched_code)} байт")
         return patched_code
 
     def _describe_changes(self, old_code: str, new_code: str) -> str:
