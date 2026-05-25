@@ -106,48 +106,58 @@ class DarwinOrchestrator:
     def _apply_patch(self, original_code: str, new_code: str) -> str | None:
         """Вшивает новую функцию от LLM обратно в полный код бота."""
         import re
-        
-        # Извлекаем имя функции из нового кода
+
         func_match = re.search(r'async def (\w+)\(', new_code)
         if not func_match:
             self.logger.error("Не удалось извлечь имя функции из ответа LLM")
             return None
-        
+
         func_name = func_match.group(1)
         self.logger.info(f"Применяю патч для функции: {func_name}")
-        
-        # Разбиваем код на строки и ищем функцию
-        lines = original_code.split('\n')
-        func_start = -1
-        func_end = -1
-        
-        for i, line in enumerate(lines):
-            if f'async def {func_name}(' in line:
-                func_start = i
-            elif func_start >= 0 and line.startswith('async def ') and i > func_start:
-                func_end = i
-                break
-            elif func_start >= 0 and i == len(lines) - 1:
-                func_end = i + 1
-        
-        if func_start < 0:
-            self.logger.error(f"Функция {func_name} не найдена в оригинальном коде")
-            return None
-        
-        if func_end < 0:
-            func_end = len(lines)
-        
-        # Вырезаем старую функцию и вставляем новую
-        old_func_lines = lines[func_start:func_end]
-        old_func = '\n'.join(old_func_lines)
-        new_func_clean = new_code.strip()
-        
-        patched_code = original_code.replace(old_func, new_func_clean, 1)
-        
+
+        # Проверяем, существует ли уже такая функция
+        if f'async def {func_name}(' in original_code:
+            # Замена существующей функции
+            lines = original_code.split('\n')
+            func_start = -1
+            func_end = -1
+
+            for i, line in enumerate(lines):
+                if f'async def {func_name}(' in line:
+                    func_start = i
+                elif func_start >= 0 and line.startswith('async def ') and i > func_start:
+                    func_end = i
+                    break
+                elif func_start >= 0 and i == len(lines) - 1:
+                    func_end = i + 1
+
+            if func_start < 0:
+                self.logger.error(f"Функция {func_name} не найдена в оригинальном коде")
+                return None
+
+            if func_end < 0:
+                func_end = len(lines)
+
+            old_func = '\n'.join(lines[func_start:func_end])
+            patched_code = original_code.replace(old_func, new_code.strip(), 1)
+        else:
+            # 🆕 Новая функция — добавляем перед запуском
+            self.logger.info(f"Функция {func_name} не найдена — добавляю как новую")
+
+            # Ищем место вставки: перед if __name__ == "__main__":
+            insert_marker = 'if __name__ == "__main__":'
+            if insert_marker in original_code:
+                # Вставляем перед main
+                new_func_clean = new_code.strip() + '\n\n'
+                patched_code = original_code.replace(insert_marker, new_func_clean + insert_marker, 1)
+            else:
+                # Вставляем в конец
+                patched_code = original_code + '\n\n' + new_code.strip()
+
         if patched_code == original_code:
             self.logger.warning("Патч не изменил код")
             return None
-        
+
         self.logger.info(f"Патч применён: {len(patched_code)} байт")
         return patched_code
 
