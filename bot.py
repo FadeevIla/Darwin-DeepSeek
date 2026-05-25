@@ -9,19 +9,6 @@ from datetime import datetime, timezone
 
 from supabase import create_client, Client
 
-import signal
-import subprocess
-
-# 🔪 Убиваем все старые экземпляры бота, кроме текущего
-current_pid = os.getpid()
-try:
-    result = subprocess.run(['pgrep', '-f', 'bot.py'], capture_output=True, text=True)
-    for pid_str in result.stdout.strip().split('\n'):
-        if pid_str and int(pid_str) != current_pid:
-            os.kill(int(pid_str), signal.SIGKILL)
-            print(f"🔪 Убит старый процесс бота: PID {pid_str}")
-except Exception:
-    pass
 
 sys.path.insert(0, str(Path(__file__).parent))
 
