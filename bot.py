@@ -528,41 +528,150 @@ async def train_cmd(message: types.Message):
     )
 
 async def battle_cmd(message: types.Message):
-    uid = str(message.from_user.id)
-    player = get_player(uid)
+    """Битва между питомцами. Вызов на дуэль с возможностью ставки.
     
-    if not player:
-        await message.reply("У тебя нет питомца! Напиши /egg.")
+    Формула боя:
+    - Сила (strength) — увеличивает физический урон
+    - Ловкость (agility) — даёт шанс уклониться от атаки (20% + agility/2)
+    - Магия (magic) — увеличивает магический урон и шанс крита
+    - Защита (defense) — уменьшает входящий урон (урон / (1 + defense/50))
+    - Скорость (speed) — определяет кто атакует первым (сравнение speed, бросок d20)
+    
+    Args:
+        message: Объект сообщения от пользователя
+    """
+    # Запрет ботам и каналам
+    if message.from_user.is_bot or message.sender_chat:
         return
     
-    opponent = get_random_opponent(uid)
+    COOLDOWN_SECONDS = 300  # 5 минут
+    MIN_BET = 1
+    MAX_BET = 1000
+    KNOCKOUT_HP = 0
+    HEAL_DROP_CHANCE = 0.3
+    HEAL_ITEM = "аптечка"
+    HEAL_RESTORE_PERCENT = 0.5
     
-    if opponent:
-        my_power = player["strength"] + player["agility"] + player["level"] * 5
-        opp_power = opponent["strength"] + opponent["agility"] + opponent["level"] * 5
+    try:
+        # Проверка аргументов
+        args = message.get_args().split()
+        if not args:
+            await message.reply("❌ Использование: /battle @username [ставка]\nПример: /battle @player1 50")
+            return
         
-        if my_power >= opp_power:
-            update_player(uid, {"wins": player["wins"] + 1, "xp": player["xp"] + 50})
-            update_player(str(opponent["user_id"]), {"losses": opponent["losses"] + 1})
-            result = f"⚔️ Победа над {opponent['pet_emoji']} {opponent['pet_name']}!\n+50 XP"
-        else:
-            update_player(uid, {"losses": player["losses"] + 1, "hp": max(1, player["hp"] - 25)})
-            update_player(str(opponent["user_id"]), {"wins": opponent["wins"] + 1})
-            result = f"💔 Поражение от {opponent['pet_emoji']} {opponent['pet_name']}...\n-25 HP"
-    else:
-        bot_pet = random_pet()
-        my_power = player["strength"] + player["agility"] + player["level"] * 5
-        bot_power = bot_pet["strength"] + bot_pet["agility"] + bot_pet["level"] * 3
+        # Получаем цель
+        target_username = args[0].replace("@", "")
+        bet = 0
         
-        if my_power >= bot_power:
-            update_player(uid, {"wins": player["wins"] + 1, "xp": player["xp"] + 30})
-            result = f"⚔️ Победа над {bot_pet['emoji']} диким {bot_pet['name']}!\n+30 XP"
-        else:
-            update_player(uid, {"losses": player["losses"] + 1, "hp": max(1, player["hp"] - 20)})
-            result = f"💔 Поражение от {bot_pet['emoji']} дикого {bot_pet['name']}...\n-20 HP"
-    
-    await message.reply(result, parse_mode="HTML")
-
+        # Парсим ставку
+        if len(args) > 1:
+            try:
+                bet = int(args[1])
+                if bet < MIN_BET or bet > MAX_BET:
+                    await message.reply(f"❌ Ставка должна быть от {MIN_BET} до {MAX_BET} монет")
+                    return
+            except ValueError:
+                await message.reply("❌ Неверный формат ставки. Укажите число монет")
+                return
+        
+        # Получаем игроков
+        attacker = get_player(str(message.from_user.id))
+        if not attacker:
+            await message.reply("❌ У вас нет питомца! Используйте /start")
+            return
+        
+        # Проверка нокаута
+        if attacker.get("hp", 0) <= KNOCKOUT_HP:
+            await message.reply("💀 Ваш питомец в нокауте! Используйте /use аптечка для восстановления")
+            return
+        
+        # Проверка кулдауна
+        last_battle = attacker.get("last_battle_time", 0)
+        if last_battle:
+            from datetime import datetime, timezone
+            last_battle_dt = datetime.fromisoformat(last_battle) if isinstance(last_battle, str) else last_battle
+            if isinstance(last_battle_dt, str):
+                last_battle_dt = datetime.fromisoformat(last_battle_dt)
+            time_diff = (datetime.now(timezone.utc) - last_battle_dt).total_seconds()
+            if time_diff < COOLDOWN_SECONDS:
+                remaining = int(COOLDOWN_SECONDS - time_diff)
+                await message.reply(f"⏳ Подождите {remaining} секунд перед следующей битвой")
+                return
+        
+        # Ищем цель по username
+        target_player = None
+        try:
+            # Пробуем найти через Supabase
+            if supabase:
+                response = supabase.table("players").select("*").execute()
+                for player in response.data:
+                    # Получаем username из Telegram
+                    try:
+                        chat_member = await message.bot.get_chat_member(message.chat.id, player["user_id"])
+                        if chat_member.user.username and chat_member.user.username.lower() == target_username.lower():
+                            target_player = player
+                            break
+                    except:
+                        continue
+        except Exception as e:
+            logger.error(f"Ошибка поиска цели: {e}")
+        
+        if not target_player:
+            await message.reply(f"❌ Игрок @{target_username} не найден или у него нет питомца")
+            return
+        
+        # Проверка нокаута цели
+        if target_player.get("hp", 0) <= KNOCKOUT_HP:
+            await message.reply(f"💀 Питомец @{target_username} в нокауте! Он не может сражаться")
+            return
+        
+        # Проверка баланса для ставки
+        if bet > 0:
+            if attacker.get("coins", 0) < bet:
+                await message.reply(f"❌ У вас недостаточно монет. Нужно: {bet}, есть: {attacker.get('coins', 0)}")
+                return
+            if target_player.get("coins", 0) < bet:
+                await message.reply(f"❌ У @{target_username} недостаточно монет для ставки {bet}")
+                return
+        
+        # Отправляем вызов цели
+        target_id = target_player["user_id"]
+        try:
+            # Создаём клавиатуру для принятия вызова
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            keyboard = InlineKeyboardMarkup(row_width=2)
+            accept_btn = InlineKeyboardButton("⚔️ Принять вызов", callback_data=f"accept_duel_{message.from_user.id}_{bet}")
+            decline_btn = InlineKeyboardButton("❌ Отклонить", callback_data=f"decline_duel_{message.from_user.id}")
+            keyboard.add(accept_btn, decline_btn)
+            
+            bet_text = f"\n💰 Ставка: {bet} монет" if bet > 0 else ""
+            await message.bot.send_message(
+                target_id,
+                f"⚔️ @{message.from_user.username} вызывает вас на битву!{bet_text}\n\n"
+                f"Ваш питомец: {target_player.get('pet_emoji', '🐉')} {target_player.get('pet_name', 'Питомец')}\n"
+                f"Противник: {attacker.get('pet_emoji', '🐉')} {attacker.get('pet_name', 'Питомец')}",
+                reply_markup=keyboard
+            )
+            await message.reply(f"✅ Вызов отправлен @{target_username}")
+            
+            # Сохраняем информацию о вызове в временном хранилище
+            if not hasattr(battle_cmd, 'pending_duels'):
+                battle_cmd.pending_duels = {}
+            battle_cmd.pending_duels[f"{message.from_user.id}_{target_id}"] = {
+                "attacker_id": message.from_user.id,
+                "target_id": target_id,
+                "bet": bet,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Ошибка отправки вызова: {e}")
+            await message.reply("❌ Не удалось отправить вызов. Возможно, игрок заблокировал бота")
+            return
+            
+    except Exception as e:
+        logger.error(f"Ошибка в battle_cmd: {e}", exc_info=True)
+        await message.reply("❌ Произошла ошибка при подготовке битвы")
 async def top_cmd(message: types.Message):
     players = get_top_players(10)
     
