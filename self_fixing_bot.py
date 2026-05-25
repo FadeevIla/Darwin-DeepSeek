@@ -11,6 +11,7 @@ import sys
 import time
 import random
 import json
+import re
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -100,44 +101,6 @@ class DarwinOrchestrator:
             "heartbeat"
         )
 
-    def _sync_feedback(self):
-        """Сохраняет feedback.json в репозиторий (если есть локальные изменения)."""
-        import json
-
-        if not os.path.exists("feedback.json"):
-            return
-
-        with open("feedback.json", "r", encoding="utf-8") as f:
-            local_feedback = json.load(f)
-
-        if not local_feedback:
-            return
-
-        # Пушим в репозиторий
-        try:
-            content = json.dumps(local_feedback, ensure_ascii=False, indent=2)
-            blob = self.github.repo.create_git_blob(content, "utf-8")
-            ref = self.github.repo.get_git_ref("heads/main")
-            base_commit = self.github.repo.get_git_commit(ref.object.sha)
-
-            element = InputGitTreeElement(
-                path="feedback.json",
-                mode='100644',
-                type='blob',
-                sha=blob.sha
-            )
-
-            new_tree = self.github.repo.create_git_tree([element], base_commit.tree)
-            new_commit = self.github.repo.create_git_commit(
-                message="📝 Обновлён feedback.json с сервера",
-                tree=new_tree,
-                parents=[base_commit]
-            )
-            ref.edit(sha=new_commit.sha)
-            self.logger.info("📝 feedback.json запушен в репозиторий")
-        except Exception as e:
-            self.logger.warning(f"Не удалось запушить feedback.json: {e}")
-
     def _apply_patch(self, original_code: str, new_code: str) -> str | None:
         """Вшивает новую функцию от LLM обратно в полный код бота."""
         import re
@@ -185,6 +148,42 @@ class DarwinOrchestrator:
         
         self.logger.info(f"Патч применён: {len(patched_code)} байт")
         return patched_code
+
+    def _sync_feedback(self):
+        """Сохраняет feedback.json в репозиторий (если есть локальные изменения)."""
+        if not os.path.exists("feedback.json"):
+            return
+
+        with open("feedback.json", "r", encoding="utf-8") as f:
+            local_feedback = json.load(f)
+
+        if not local_feedback:
+            return
+
+        # Пушим в репозиторий
+        try:
+            content = json.dumps(local_feedback, ensure_ascii=False, indent=2)
+            blob = self.github.repo.create_git_blob(content, "utf-8")
+            ref = self.github.repo.get_git_ref("heads/main")
+            base_commit = self.github.repo.get_git_commit(ref.object.sha)
+
+            element = InputGitTreeElement(
+                path="feedback.json",
+                mode='100644',
+                type='blob',
+                sha=blob.sha
+            )
+
+            new_tree = self.github.repo.create_git_tree([element], base_commit.tree)
+            new_commit = self.github.repo.create_git_commit(
+                message="📝 Обновлён feedback.json с сервера",
+                tree=new_tree,
+                parents=[base_commit]
+            )
+            ref.edit(sha=new_commit.sha)
+            self.logger.info("📝 feedback.json запушен в репозиторий")
+        except Exception as e:
+            self.logger.warning(f"Не удалось запушить feedback.json: {e}")
 
     def _describe_changes(self, old_code: str, new_code: str) -> str:
         """Просит LLM описать изменения понятным языком."""
@@ -283,150 +282,6 @@ class DarwinOrchestrator:
             self.logger.info(f"📝 Описание сохранено: {description}")
         except Exception as e:
             self.logger.warning(f"Не удалось сохранить описание: {e}")
-
-    def run_cycle(self):
-        """Один полный цикл самосовершенствования."""
-        cycle_start = datetime.now(timezone.utc)
-        self.logger.info("#" * 60)
-        self.logger.info(f"ЦИКЛ НАЧАТ: {cycle_start.isoformat()}")
-        self.logger.info("#" * 60)
-
-        self.notifier.send(
-            f"🔄 Цикл запущен\n"
-            f"⏱️ {cycle_start.strftime('%H:%M:%S UTC')}\n"
-            f"🧠 Память: {len(self.memory.data['features'])} фич",
-            "heartbeat"
-        )
-
-        stats = {"bugs_fixed": False, "feature_added": False, "errors": []}
-
-        # --- Шаг 1: Загрузка кода ---
-        try:
-            self.notifier.send("📥 Загрузка кода из репозитория...", "info")
-            code, sha = self.github.get_code()
-        except Exception as e:
-            self.logger.critical(f"Ошибка загрузки: {e}")
-            self.notifier.send(f"💥 Критическая ошибка загрузки: {str(e)[:200]}", "error")
-            return False
-
-        # Синхронизируем feedback.json с репозиторием
-        try:
-            self._sync_feedback()
-        except Exception as e:
-            self.logger.warning(f"Не удалось синхронизировать фидбек: {e}")
-
-        # --- Шаг 2: Поиск и исправление багов ---
-        try:
-            self.notifier.send("🔍 Поиск багов через LLM...", "info")
-            fixed_func_code = self.llm.analyze_bugs(code)
-
-            if fixed_func_code and fixed_func_code != code:
-                self.logger.info(f"Найдены изменения в функции: {len(fixed_func_code)} байт")
-                self.notifier.send("🐛 Найдены баги", "fix")
-
-                patched_code = self._apply_patch(code, fixed_func_code)
-                if not patched_code:
-                    stats["errors"].append("Не удалось применить патч баг-фикса")
-                    self.logger.error("Не удалось применить патч баг-фикса")
-                else:
-                    is_dup, reason = self.memory.is_duplicate(patched_code)
-                    if is_dup:
-                        self.logger.info(f"Пропуск: дубликат ({reason})")
-                        self.notifier.send(f"⏭️ Фикс пропущен: {reason}", "warning")
-                    else:
-                        valid, validated_code, err = self.validator.full_validation(patched_code)
-                        if valid:
-                            commit_msg = "🤖 Auto-fix: нейросеть исправила баги"
-                            commit_sha = self.github.push(validated_code, sha, commit_msg)
-                            self.memory.add_feature(validated_code, "fix")
-                            self.memory.add_commit(commit_sha, "Auto-fix")
-                            stats["bugs_fixed"] = True
-
-                            # Генерируем описание исправления
-                            description = self._describe_changes(code, validated_code)
-                            self._save_update_description(description, commit_sha)
-                            self.notifier.send(f"🐛 {description}", "fix")
-
-                            code, sha = validated_code, commit_sha
-                        else:
-                            stats["errors"].append(f"Валидация фикса: {err}")
-            else:
-                self.logger.info("Багов не найдено")
-                self.notifier.send("✅ Код чист, багов нет", "success")
-        except Exception as e:
-            self.logger.error(f"Ошибка этапа фикса: {e}")
-            stats["errors"].append(f"Фикс: {e}")
-
-        # --- Шаг 3: Генерация новой фичи ---
-        try:
-            self.notifier.send("💡 Генерация новой фичи...", "info")
-
-            if random.random() > 0.8:
-                self.logger.info("Пропуск этапа фич (отдых)")
-                self.notifier.send("😴 Бот решил отдохнуть, фичи пропущены", "info")
-            else:
-                new_func_code = self.llm.generate_feature(code)
-
-                if new_func_code and new_func_code != code:
-                    self.logger.info(f"Фича сгенерирована: {len(new_func_code)} байт")
-                    self.notifier.send(
-                        f"✨ Новая фича готова\nРазмер: {len(new_func_code)} байт",
-                        "feature"
-                    )
-
-                    patched_code = self._apply_patch(code, new_func_code)
-                    if not patched_code:
-                        stats["errors"].append("Не удалось применить патч фичи")
-                        self.logger.error("Не удалось применить патч фичи")
-                    else:
-                        is_dup, reason = self.memory.is_duplicate(patched_code)
-                        if is_dup:
-                            self.logger.info(f"Дубликат фичи: {reason}")
-                            self.notifier.send(f"⏭️ Фича пропущена: {reason}", "warning")
-                        else:
-                            valid, validated_code, err = self.validator.full_validation(patched_code)
-                            if valid:
-                                commit_msg = "🤖 Auto-feature: нейросеть добавила новую функцию"
-                                commit_sha = self.github.push(validated_code, sha, commit_msg)
-                                self.memory.add_feature(validated_code, "feature")
-                                self.memory.add_commit(commit_sha, "Auto-feature")
-                                stats["feature_added"] = True
-
-                                # Генерируем описание новой фичи
-                                description = self._describe_changes(code, validated_code)
-                                self._save_update_description(description, commit_sha)
-                                self.notifier.send(f"✨ {description}", "feature")
-
-                                code, sha = validated_code, commit_sha
-                            else:
-                                stats["errors"].append(f"Валидация фичи: {err}")
-                else:
-                    self.logger.info("LLM не предложила новой фичи")
-                    self.notifier.send("🤔 Нейросеть не придумала новую фичу", "info")
-        except Exception as e:
-            self.logger.error(f"Ошибка этапа фичи: {e}")
-            stats["errors"].append(f"Фича: {e}")
-
-        # --- Итоги ---
-        duration = (datetime.now(timezone.utc) - cycle_start).total_seconds()
-        self.logger.info("=" * 60)
-        self.logger.info(f"ЦИКЛ ЗАВЕРШЁН: {duration:.1f} сек")
-        self.logger.info(
-            f"Баги: {stats['bugs_fixed']} | Фичи: {stats['feature_added']} | Ошибки: {len(stats['errors'])}")
-        self.logger.info("=" * 60)
-
-        summary = [
-            f"⏱️ Длительность: {duration:.1f} сек",
-            f"🐛 Баги: {'исправлены' if stats['bugs_fixed'] else 'нет'}",
-            f"✨ Фичи: {'добавлены' if stats['feature_added'] else 'нет'}",
-        ]
-        if stats["errors"]:
-            summary.append(f"⚠️ Ошибок: {len(stats['errors'])}")
-
-        level = "success" if not stats["errors"] else "warning"
-        self.notifier.send("\n".join(summary), level)
-
-        return len(stats["errors"]) == 0
 
     def _push_requirements(self, content: str):
         """Пушит обновлённый requirements.txt в репозиторий."""
@@ -546,6 +401,166 @@ class DarwinOrchestrator:
         else:
             self.logger.info("📦 Зависимости актуальны")
             return False, None
+
+    def run_cycle(self):
+        """Один полный цикл самосовершенствования."""
+        cycle_start = datetime.now(timezone.utc)
+        self.logger.info("#" * 60)
+        self.logger.info(f"ЦИКЛ НАЧАТ: {cycle_start.isoformat()}")
+        self.logger.info("#" * 60)
+
+        self.notifier.send(
+            f"🔄 Цикл запущен\n"
+            f"⏱️ {cycle_start.strftime('%H:%M:%S UTC')}\n"
+            f"🧠 Память: {len(self.memory.data['features'])} фич",
+            "heartbeat"
+        )
+
+        stats = {"bugs_fixed": False, "feature_added": False, "errors": []}
+
+        # --- Шаг 1: Загрузка кода ---
+        try:
+            self.notifier.send("📥 Загрузка кода из репозитория...", "info")
+            code, sha = self.github.get_code()
+        except Exception as e:
+            self.logger.critical(f"Ошибка загрузки: {e}")
+            self.notifier.send(f"💥 Критическая ошибка загрузки: {str(e)[:200]}", "error")
+            return False
+
+        # Синхронизируем feedback.json с репозиторием
+        try:
+            self._sync_feedback()
+        except Exception as e:
+            self.logger.warning(f"Не удалось синхронизировать фидбек: {e}")
+
+        # --- Шаг 2: Поиск и исправление багов ---
+        try:
+            self.notifier.send("🔍 Поиск багов через LLM...", "info")
+            fixed_func_code = self.llm.analyze_bugs(code)
+
+            if fixed_func_code and fixed_func_code != code:
+                self.logger.info(f"Найдены изменения в функции: {len(fixed_func_code)} байт")
+                self.notifier.send("🐛 Найдены баги", "fix")
+
+                patched_code = self._apply_patch(code, fixed_func_code)
+                if not patched_code:
+                    stats["errors"].append("Не удалось применить патч баг-фикса")
+                    self.logger.error("Не удалось применить патч баг-фикса")
+                else:
+                    is_dup, reason = self.memory.is_duplicate(patched_code)
+                    if is_dup:
+                        self.logger.info(f"Пропуск: дубликат ({reason})")
+                        self.notifier.send(f"⏭️ Фикс пропущен: {reason}", "warning")
+                    else:
+                        valid, validated_code, err = self.validator.full_validation(patched_code)
+                        if valid:
+                            commit_msg = "🤖 Auto-fix: нейросеть исправила баги"
+                            commit_sha = self.github.push(validated_code, sha, commit_msg)
+                            self.memory.add_feature(validated_code, "fix")
+                            self.memory.add_commit(commit_sha, "Auto-fix")
+                            stats["bugs_fixed"] = True
+
+                            # Генерируем описание исправления
+                            description = self._describe_changes(code, validated_code)
+                            self._save_update_description(description, commit_sha)
+                            self.notifier.send(f"🐛 {description}", "fix")
+
+                            # Принудительно чистим фидбек после обработки
+                            try:
+                                from core.feedback import clear_feedback
+                                clear_feedback()
+                                self.logger.info("📝 Фидбек очищен после обработки")
+                            except Exception as e:
+                                self.logger.warning(f"Не удалось очистить фидбек: {e}")
+
+                            code, sha = validated_code, commit_sha
+                        else:
+                            stats["errors"].append(f"Валидация фикса: {err}")
+            else:
+                self.logger.info("Багов не найдено")
+                self.notifier.send("✅ Код чист, багов нет", "success")
+        except Exception as e:
+            self.logger.error(f"Ошибка этапа фикса: {e}")
+            stats["errors"].append(f"Фикс: {e}")
+
+        # --- Шаг 3: Генерация новой фичи ---
+        try:
+            self.notifier.send("💡 Генерация новой фичи...", "info")
+
+            if random.random() > 0.8:
+                self.logger.info("Пропуск этапа фич (отдых)")
+                self.notifier.send("😴 Бот решил отдохнуть, фичи пропущены", "info")
+            else:
+                new_func_code = self.llm.generate_feature(code)
+
+                if new_func_code and new_func_code != code:
+                    self.logger.info(f"Фича сгенерирована: {len(new_func_code)} байт")
+                    self.notifier.send(
+                        f"✨ Новая фича готова\nРазмер: {len(new_func_code)} байт",
+                        "feature"
+                    )
+
+                    patched_code = self._apply_patch(code, new_func_code)
+                    if not patched_code:
+                        stats["errors"].append("Не удалось применить патч фичи")
+                        self.logger.error("Не удалось применить патч фичи")
+                    else:
+                        is_dup, reason = self.memory.is_duplicate(patched_code)
+                        if is_dup:
+                            self.logger.info(f"Дубликат фичи: {reason}")
+                            self.notifier.send(f"⏭️ Фича пропущена: {reason}", "warning")
+                        else:
+                            valid, validated_code, err = self.validator.full_validation(patched_code)
+                            if valid:
+                                commit_msg = "🤖 Auto-feature: нейросеть добавила новую функцию"
+                                commit_sha = self.github.push(validated_code, sha, commit_msg)
+                                self.memory.add_feature(validated_code, "feature")
+                                self.memory.add_commit(commit_sha, "Auto-feature")
+                                stats["feature_added"] = True
+
+                                # Генерируем описание новой фичи
+                                description = self._describe_changes(code, validated_code)
+                                self._save_update_description(description, commit_sha)
+                                self.notifier.send(f"✨ {description}", "feature")
+
+                                # Принудительно чистим фидбек после обработки
+                                try:
+                                    from core.feedback import clear_feedback
+                                    clear_feedback()
+                                    self.logger.info("📝 Фидбек очищен после обработки")
+                                except Exception as e:
+                                    self.logger.warning(f"Не удалось очистить фидбек: {e}")
+
+                                code, sha = validated_code, commit_sha
+                            else:
+                                stats["errors"].append(f"Валидация фичи: {err}")
+                else:
+                    self.logger.info("LLM не предложила новой фичи")
+                    self.notifier.send("🤔 Нейросеть не придумала новую фичу", "info")
+        except Exception as e:
+            self.logger.error(f"Ошибка этапа фичи: {e}")
+            stats["errors"].append(f"Фича: {e}")
+
+        # --- Итоги ---
+        duration = (datetime.now(timezone.utc) - cycle_start).total_seconds()
+        self.logger.info("=" * 60)
+        self.logger.info(f"ЦИКЛ ЗАВЕРШЁН: {duration:.1f} сек")
+        self.logger.info(
+            f"Баги: {stats['bugs_fixed']} | Фичи: {stats['feature_added']} | Ошибки: {len(stats['errors'])}")
+        self.logger.info("=" * 60)
+
+        summary = [
+            f"⏱️ Длительность: {duration:.1f} сек",
+            f"🐛 Баги: {'исправлены' if stats['bugs_fixed'] else 'нет'}",
+            f"✨ Фичи: {'добавлены' if stats['feature_added'] else 'нет'}",
+        ]
+        if stats["errors"]:
+            summary.append(f"⚠️ Ошибок: {len(stats['errors'])}")
+
+        level = "success" if not stats["errors"] else "warning"
+        self.notifier.send("\n".join(summary), level)
+
+        return len(stats["errors"]) == 0
 
     def start(self):
         """Запуск бесконечного цикла."""
