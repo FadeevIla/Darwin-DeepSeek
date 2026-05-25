@@ -12,7 +12,9 @@ import time
 import random
 import json
 import re
+import base64
 import traceback
+import requests
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -185,6 +187,55 @@ class DarwinOrchestrator:
         except Exception as e:
             self.logger.warning(f"Не удалось запушить feedback.json: {e}")
 
+    def _load_feedback_from_github(self) -> list:
+        """Загружает актуальный feedback.json из GitHub API."""
+        repo_name = self.config["REPO_NAME"]
+        token = self.config["GITHUB_TOKEN"]
+        
+        if not token or not repo_name:
+            return []
+        
+        try:
+            url = f"https://api.github.com/repos/{repo_name}/contents/feedback.json"
+            headers = {"Authorization": f"Bearer {token}"}
+            
+            resp = requests.get(url, headers=headers)
+            if resp.status_code == 200:
+                content_b64 = resp.json().get("content", "")
+                if content_b64:
+                    content = base64.b64decode(content_b64).decode("utf-8")
+                    return json.loads(content)
+        except Exception as e:
+            self.logger.warning(f"Не удалось загрузить фидбек из GitHub: {e}")
+        
+        return []
+
+    def _clear_feedback_on_github(self):
+        """Очищает feedback.json через GitHub API."""
+        repo_name = self.config["REPO_NAME"]
+        token = self.config["GITHUB_TOKEN"]
+        
+        if not token or not repo_name:
+            return
+        
+        try:
+            url = f"https://api.github.com/repos/{repo_name}/contents/feedback.json"
+            headers = {"Authorization": f"Bearer {token}"}
+            
+            # Получаем SHA
+            resp = requests.get(url, headers=headers)
+            if resp.status_code == 200:
+                sha = resp.json().get("sha", "")
+                # Очищаем
+                requests.put(url, headers=headers, json={
+                    "message": "🧹 Очищен feedback.json",
+                    "content": base64.b64encode(b"[]").decode(),
+                    "sha": sha,
+                })
+                self.logger.info("📝 Фидбек очищен на GitHub")
+        except Exception as e:
+            self.logger.warning(f"Не удалось очистить фидбек на GitHub: {e}")
+
     def _describe_changes(self, old_code: str, new_code: str) -> str:
         """Просит LLM описать изменения понятным языком."""
         try:
@@ -234,7 +285,6 @@ class DarwinOrchestrator:
                 except Exception as e:
                     last_error = e
                     self.logger.warning(f"Модель {model} не ответила: {str(e)[:100]}")
-                    import time
                     time.sleep(5)
                     continue
 
@@ -282,110 +332,6 @@ class DarwinOrchestrator:
         except Exception as e:
             self.logger.warning(f"Не удалось сохранить описание: {e}")
 
-    def _push_requirements(self, content: str):
-        """Пушит обновлённый requirements.txt в репозиторий."""
-        try:
-            blob = self.github.repo.create_git_blob(content, "utf-8")
-            ref = self.github.repo.get_git_ref("heads/main")
-            base_commit = self.github.repo.get_git_commit(ref.object.sha)
-            element = InputGitTreeElement(
-                path="requirements.txt",
-                mode='100644',
-                type='blob',
-                sha=blob.sha
-            )
-            new_tree = self.github.repo.create_git_tree([element], base_commit.tree)
-            new_commit = self.github.repo.create_git_commit(
-                message="📦 Автообновление зависимостей",
-                tree=new_tree,
-                parents=[base_commit]
-            )
-            ref.edit(sha=new_commit.sha)
-            self.logger.info("📦 requirements.txt обновлён и запушен")
-        except Exception as e:
-            self.logger.warning(f"Не удалось запушить requirements.txt: {e}")
-
-    def _sync_dependencies(self, code: str):
-        """Анализирует импорты в коде и обновляет requirements.txt при необходимости."""
-        import re
-        import ast
-
-        std_libs = {
-            'os', 'sys', 'time', 'json', 're', 'random', 'asyncio', 'logging',
-            'pathlib', 'datetime', 'traceback', 'tempfile', 'hashlib', 'base64',
-            'subprocess', 'secrets', 'importlib', 'typing', 'io', 'collections',
-            'functools', 'itertools', 'math', 'string', 'textwrap', 'urllib',
-        }
-
-        always_needed = {
-            'PyGithub', 'openai', 'pyflakes', 'requests', 'python-dotenv',
-        }
-
-        imports = set()
-        for line in code.split('\n'):
-            line = line.strip()
-            if line.startswith('import '):
-                parts = line.replace('import ', '').split(',')
-                for part in parts:
-                    lib = part.strip().split('.')[0].split(' as ')[0].strip()
-                    imports.add(lib)
-            elif line.startswith('from '):
-                lib = line.split(' ')[1].split('.')[0].strip()
-                imports.add(lib)
-
-        needed = set()
-        for lib in imports:
-            if lib not in std_libs:
-                needed.add(lib)
-
-        needed = needed | always_needed
-
-        pypi_names = {
-            'telegram': 'python-telegram-bot',
-            'aiogram': 'aiogram==2.25.1',
-            'aiohttp': 'aiohttp',
-            'dotenv': 'python-dotenv',
-            'github': 'PyGithub',
-            'groq': 'groq',
-            'PIL': 'Pillow',
-            'yaml': 'PyYAML',
-            'bs4': 'beautifulsoup4',
-            'sklearn': 'scikit-learn',
-            'cv2': 'opencv-python',
-            'numpy': 'numpy',
-            'pandas': 'pandas',
-            'flask': 'flask',
-            'django': 'django',
-            'fastapi': 'fastapi',
-            'uvicorn': 'uvicorn',
-        }
-
-        packages = []
-        for lib in sorted(needed):
-            if lib in ['core', 'utils', 'config', 'bot', 'self_fixing_bot']:
-                continue
-            packages.append(pypi_names.get(lib, lib))
-
-        try:
-            with open('requirements.txt', 'r') as f:
-                current = set(line.strip().split('==')[0].split('>=')[0] for line in f if line.strip())
-        except FileNotFoundError:
-            current = set()
-
-        current_pkg_names = set()
-        for pkg in packages:
-            current_pkg_names.add(pkg.split('==')[0].split('>=')[0])
-
-        if current_pkg_names - current:
-            new_content = '\n'.join(sorted(packages)) + '\n'
-            with open('requirements.txt', 'w') as f:
-                f.write(new_content)
-            self.logger.info(f"📦 Обнаружены новые зависимости: {current_pkg_names - current}")
-            return True, new_content
-        else:
-            self.logger.info("📦 Зависимости актуальны")
-            return False, None
-
     def run_cycle(self):
         """Один полный цикл самосовершенствования."""
         cycle_start = datetime.now(timezone.utc)
@@ -411,22 +357,12 @@ class DarwinOrchestrator:
             self.notifier.send(f"💥 Критическая ошибка загрузки: {str(e)[:200]}", "error")
             return False
 
-        # Синхронизируем feedback.json с репозиторием
-        try:
-            self._sync_feedback()
-        except Exception as e:
-            self.logger.warning(f"Не удалось синхронизировать фидбек: {e}")
-
-        # 🆕 Загружаем и ОЧИЩАЕМ фидбек ДО обработки (чтобы не потерять)
-        feedback_data = []
-        try:
-            from core.feedback import load_feedback, save_feedback
-            feedback_data = load_feedback()
-            if feedback_data:
-                self.logger.info(f"📝 Загружено {len(feedback_data)} пожеланий, очищаю файл")
-                save_feedback([])
-        except Exception as e:
-            self.logger.warning(f"Не удалось загрузить фидбек: {e}")
+        # 🆕 Загружаем фидбек из GitHub API (актуальная версия)
+        feedback_data = self._load_feedback_from_github()
+        if feedback_data:
+            self.logger.info(f"📝 Загружено {len(feedback_data)} пожеланий из GitHub")
+            # Очищаем фидбек на GitHub
+            self._clear_feedback_on_github()
 
         # --- Шаг 2: Поиск и исправление багов ---
         try:
