@@ -139,10 +139,7 @@ class DarwinOrchestrator:
             self.logger.warning(f"Не удалось запушить feedback.json: {e}")
 
     def _apply_patch(self, original_code: str, new_code: str) -> str | None:
-        """
-        Вшивает новую функцию от LLM обратно в полный код бота.
-        Возвращает None, если не удалось найти функцию для замены.
-        """
+        """Вшивает новую функцию от LLM обратно в полный код бота."""
         import re
         
         # Извлекаем имя функции из нового кода
@@ -154,30 +151,39 @@ class DarwinOrchestrator:
         func_name = func_match.group(1)
         self.logger.info(f"Применяю патч для функции: {func_name}")
         
-        # Ищем функцию в оригинальном коде (от async def до следующей async def или конца)
-        pattern = r'(async def ' + func_name + r'\(.*?\n(?:\s+.*\n)*?)(?=\nasync def |\nif __name__|\Z)'
-        original_func_match = re.search(pattern, original_code, re.DOTALL)
+        # Разбиваем код на строки и ищем функцию
+        lines = original_code.split('\n')
+        func_start = -1
+        func_end = -1
         
-        if not original_func_match:
+        for i, line in enumerate(lines):
+            if f'async def {func_name}(' in line:
+                func_start = i
+            elif func_start >= 0 and line.startswith('async def ') and i > func_start:
+                func_end = i
+                break
+            elif func_start >= 0 and i == len(lines) - 1:
+                func_end = i + 1
+        
+        if func_start < 0:
             self.logger.error(f"Функция {func_name} не найдена в оригинальном коде")
             return None
         
-        # Заменяем старую функцию на новую
-        old_func = original_func_match.group(1)
+        if func_end < 0:
+            func_end = len(lines)
+        
+        # Вырезаем старую функцию и вставляем новую
+        old_func_lines = lines[func_start:func_end]
+        old_func = '\n'.join(old_func_lines)
         new_func_clean = new_code.strip()
         
-        patched_code = original_code.replace(old_func, new_func_clean)
+        patched_code = original_code.replace(old_func, new_func_clean, 1)
         
         if patched_code == original_code:
-            self.logger.warning("Патч не изменил код — возможно, функция не найдена")
+            self.logger.warning("Патч не изменил код")
             return None
         
-        # Проверяем, что результат начинается с импорта
-        if not patched_code.strip().startswith(('import', 'from', '#', '"""')):
-            self.logger.error("После патча код не начинается с импорта!")
-            return None
-        
-        self.logger.info(f"Патч успешно применён, размер: {len(patched_code)} байт")
+        self.logger.info(f"Патч применён: {len(patched_code)} байт")
         return patched_code
 
     def _describe_changes(self, old_code: str, new_code: str) -> str:
