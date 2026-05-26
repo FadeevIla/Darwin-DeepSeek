@@ -2276,6 +2276,105 @@ async def incubate_cmd(message: types.Message):
         logger.error(f"Критическая ошибка в incubate_cmd для пользователя {message.from_user.id}: {e}")
         await message.reply("❌ Произошла ошибка при инкубации. Попробуй позже.")
 
+async def incubate_cmd(message: types.Message):
+    """Инкубирует яйцо питомца, увеличивая прогресс инкубации.
+    
+    При достижении 100% прогресса яйцо вылупляется, и питомец становится доступен.
+    Инкубацию можно выполнять раз в 30 минут.
+    
+    Args:
+        message: Объект сообщения от пользователя
+        
+    Returns:
+        None: Отправляет ответ пользователю через reply
+    """
+    # Константы
+    INCUBATION_INCREMENT = 25  # Прогресс за одну инкубацию
+    MAX_INCUBATION = 100       # Максимальный прогресс для вылупления
+    COOLDOWN_MINUTES = 30      # Время между инкубациями в минутах
+    
+    user_id = str(message.from_user.id)
+    
+    try:
+        player = get_player(user_id)
+        if not player:
+            await message.reply("❌ Ты ещё не создал питомца! Напиши /start")
+            return
+        
+        # Проверка, не вылупился ли уже питомец
+        if player.get("hatched", False):
+            await message.reply("🥚 Твой питомец уже вылупился! Используй /stats чтобы посмотреть его характеристики.")
+            return
+        
+        # Проверка кулдауна
+        last_incubation = player.get("last_incubation_at")
+        if last_incubation:
+            try:
+                last_time = datetime.fromisoformat(last_incubation)
+                now = datetime.now(timezone.utc)
+                time_diff = (now - last_time).total_seconds() / 60
+                
+                if time_diff < COOLDOWN_MINUTES:
+                    remaining_minutes = int(COOLDOWN_MINUTES - time_diff)
+                    await message.reply(
+                        f"⏳ Яйцо ещё не готово к инкубации. Подожди {remaining_minutes} мин."
+                    )
+                    return
+            except (ValueError, TypeError):
+                logger.warning(f"Некорректный формат времени last_incubation для {user_id}")
+        
+        # Увеличиваем прогресс инкубации
+        current_progress = player.get("inc_progress", 0)
+        new_progress = min(current_progress + INCUBATION_INCREMENT, MAX_INCUBATION)
+        
+        update_data = {
+            "inc_progress": new_progress,
+            "last_incubation_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Проверка на вылупление
+        if new_progress >= MAX_INCUBATION:
+            update_data["hatched"] = True
+            update_data["inc_progress"] = MAX_INCUBATION
+            
+            update_player(user_id, update_data)
+            
+            pet_name = player.get("pet_name", "Питомец")
+            pet_emoji = player.get("pet_emoji", "🐣")
+            
+            await message.reply(
+                f"🎉 *ПОЗДРАВЛЯЮ!*\n\n"
+                f"Твоё яйцо вылупилось!\n"
+                f"Встречай своего питомца: {pet_emoji} *{pet_name}*\n\n"
+                f"Теперь ты можешь:\n"
+                f"• /feed — покормить питомца\n"
+                f"• /train — тренировать питомца\n"
+                f"• /battle — сразиться на арене\n"
+                f"• /stats — посмотреть характеристики",
+                parse_mode="Markdown"
+            )
+            
+            logger.info(f"Игрок {user_id}: яйцо вылупилось! Питомец: {pet_name}")
+        else:
+            update_player(user_id, update_data)
+            
+            progress_percent = int((new_progress / MAX_INCUBATION) * 100)
+            progress_bar = "▓" * (new_progress // 10) + "░" * ((MAX_INCUBATION - new_progress) // 10)
+            
+            await message.reply(
+                f"🥚 *Инкубация яйца*\n\n"
+                f"Прогресс: {progress_percent}%\n"
+                f"{progress_bar}\n\n"
+                f"Следующая инкубация будет доступна через {COOLDOWN_MINUTES} мин.",
+                parse_mode="Markdown"
+            )
+            
+            logger.info(f"Игрок {user_id}: прогресс инкубации {new_progress}/{MAX_INCUBATION}")
+            
+    except Exception as e:
+        logger.error(f"Ошибка при инкубации для {user_id}: {e}", exc_info=True)
+        await message.reply("❌ Произошла ошибка при инкубации. Попробуй позже.")
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
