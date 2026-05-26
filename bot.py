@@ -229,129 +229,129 @@ async def egg_cmd(message: types.Message):
     # Отправляем ответ
     await message.reply(EGG_GIVEN_MESSAGE)
 async def incubate_cmd(message: types.Message):
-    """
-    Обрабатывает команду /incubate — инкубация яйца питомца.
+    """Инкубирует яйцо питомца, увеличивая прогресс инкубации.
     
-    Логика:
-    - Если питомец уже вылупился — сообщаем об этом
-    - Если инкубация не начата — начинаем с 0%
-    - Каждый вызов увеличивает прогресс на случайную величину (5-15%)
-    - При достижении 100% питомец вылупляется
+    При достижении 100% прогресса яйцо вылупляется, и питомец становится активным.
+    Требуется 3 часа реального времени для полной инкубации.
     
     Args:
         message: Объект сообщения от пользователя
         
     Returns:
-        None: Отправляет ответ пользователю через message.reply()
+        None
     """
-    # Константы
-    MIN_PROGRESS_INCREMENT = 5
-    MAX_PROGRESS_INCREMENT = 15
-    MAX_PROGRESS = 100
-    HATCH_PROGRESS = 100
-    
-    user_id = str(message.from_user.id)
-    
     try:
-        player = get_player(user_id)
-    except Exception as e:
-        logger.error(f"Ошибка получения данных игрока {user_id}: {e}")
-        await message.reply("❌ Произошла ошибка при загрузке данных. Попробуйте позже.")
-        return
-    
-    if not player:
-        await message.reply("❌ Вы не зарегистрированы! Используйте /start для создания питомца.")
-        return
-    
-    # Проверяем, вылупился ли уже питомец
-    if player.get("hatched", False):
-        await message.reply(
-            f"🐣 {player.get('pet_emoji', '')} {player.get('pet_name', 'Питомец')} уже вылупился!\n"
-            f"Используйте /stats для просмотра характеристик."
-        )
-        return
-    
-    # Получаем текущий прогресс инкубации
-    current_progress = player.get("inc_progress", 0)
-    
-    # Если прогресс не задан или 0 — начинаем инкубацию
-    if current_progress is None or current_progress <= 0:
-        current_progress = 0
-        logger.info(f"Игрок {user_id} начал инкубацию яйца")
-    
-    # Увеличиваем прогресс на случайную величину
-    progress_increment = random.randint(MIN_PROGRESS_INCREMENT, MAX_PROGRESS_INCREMENT)
-    new_progress = min(current_progress + progress_increment, MAX_PROGRESS)
-    
-    # Обновляем прогресс в базе данных
-    try:
-        update_player(user_id, {"inc_progress": new_progress})
-        logger.info(f"Игрок {user_id}: прогресс инкубации {current_progress}% -> {new_progress}%")
-    except Exception as e:
-        logger.error(f"Ошибка обновления прогресса инкубации для {user_id}: {e}")
-        await message.reply("❌ Произошла ошибка при сохранении прогресса. Попробуйте позже.")
-        return
-    
-    # Проверяем, достигнут ли 100% прогресс
-    if new_progress >= HATCH_PROGRESS:
-        # Вылупляем питомца
-        try:
-            update_player(user_id, {
-                "hatched": True,
-                "inc_progress": HATCH_PROGRESS
+        uid = str(message.from_user.id)
+        player = get_player(uid)
+        
+        if not player:
+            await message.reply("❌ Ты не создал питомца! Используй /start")
+            return
+        
+        # Проверка, не вылупился ли уже питомец
+        if player.get("hatched", False):
+            await message.reply("🐣 Твой питомец уже вылупился! Используй /stats для просмотра характеристик.")
+            return
+        
+        # Константы для инкубации
+        INCUBATION_TIME_HOURS = 3  # Время полной инкубации в часах
+        INCUBATION_CHECK_INTERVAL = 60  # Интервал проверки в секундах
+        PROGRESS_PER_CHECK = 100.0 / (INCUBATION_TIME_HOURS * 3600 / INCUBATION_CHECK_INTERVAL)
+        
+        # Получаем текущий прогресс
+        current_progress = player.get("inc_progress", 0)
+        
+        # Проверяем время последней инкубации
+        last_incubation = player.get("last_incubation_time")
+        current_time = datetime.now(timezone.utc)
+        
+        if last_incubation:
+            try:
+                last_time = datetime.fromisoformat(last_incubation)
+                time_diff = (current_time - last_time).total_seconds()
+                
+                # Проверяем, прошло ли достаточно времени
+                if time_diff < INCUBATION_CHECK_INTERVAL:
+                    remaining_seconds = int(INCUBATION_CHECK_INTERVAL - time_diff)
+                    await message.reply(
+                        f"⏳ Подожди ещё {remaining_seconds} секунд перед следующей инкубацией!\n"
+                        f"📊 Прогресс: {current_progress:.1f}%"
+                    )
+                    return
+            except (ValueError, TypeError) as e:
+                logger.error(f"Ошибка парсинга времени инкубации: {e}")
+                # Если время некорректно, продолжаем инкубацию
+        
+        # Рассчитываем новый прогресс
+        new_progress = min(100.0, current_progress + PROGRESS_PER_CHECK)
+        
+        # Обновляем данные в БД
+        update_data = {
+            "inc_progress": round(new_progress, 1),
+            "last_incubation_time": current_time.isoformat()
+        }
+        
+        # Проверяем, вылупился ли питомец
+        if new_progress >= 100.0:
+            # Питомец вылупляется!
+            update_data["hatched"] = True
+            update_data["inc_progress"] = 100.0
+            
+            # Генерируем характеристики для вылупившегося питомца
+            pet = random_pet()
+            update_data.update({
+                "pet_name": pet["name"],
+                "pet_emoji": pet["emoji"],
+                "hp": pet["hp"],
+                "max_hp": pet["max_hp"],
+                "strength": pet["strength"],
+                "agility": pet["agility"],
+                "magic": pet["magic"],
+                "defense": pet["defense"],
+                "speed": pet["speed"],
+                "hunger": pet["hunger"],
+                "mood": pet["mood"],
+                "level": pet["level"],
+                "xp": pet["xp"],
+                "wins": pet["wins"],
+                "losses": pet["losses"]
             })
             
-            pet_emoji = player.get("pet_emoji", "🐉")
-            pet_name = player.get("pet_name", "Питомец")
+            update_player(uid, update_data)
             
             await message.reply(
-                f"🎉 *ПОЗДРАВЛЯЕМ!*\n\n"
-                f"🐣 Ваше яйцо вылупилось!\n"
-                f"На свет появился {pet_emoji} *{pet_name}*!\n\n"
-                f"Теперь вы можете:\n"
-                f"• /feed — покормить питомца\n"
-                f"• /train — тренировать питомца\n"
-                f"• /battle — сразиться на арене\n"
-                f"• /stats — посмотреть характеристики",
-                parse_mode="Markdown"
+                f"🎉 **ПОЗДРАВЛЯЮ!**\n\n"
+                f"🐣 Твой питомец вылупился из яйца!\n\n"
+                f"**{pet['emoji']} {pet['name']}**\n"
+                f"❤️ HP: {pet['hp']}/{pet['max_hp']}\n"
+                f"⚔️ Сила: {pet['strength']}\n"
+                f"🏃 Скорость: {pet['speed']}\n"
+                f"🛡️ Защита: {pet['defense']}\n\n"
+                f"Используй /stats для просмотра полных характеристик!"
             )
             
-            logger.info(f"Игрок {user_id}: питомец {pet_name} вылупился!")
+            logger.info(f"Игрок {uid} вылупил питомца {pet['name']}")
+        else:
+            # Обновляем только прогресс
+            update_player(uid, update_data)
             
-        except Exception as e:
-            logger.error(f"Ошибка при вылуплении питомца для {user_id}: {e}")
-            await message.reply("❌ Произошла ошибка при вылуплении питомца. Попробуйте позже.")
-            return
-    else:
-        # Отправляем сообщение о прогрессе
-        progress_bar_length = 10
-        filled_length = int(progress_bar_length * new_progress / MAX_PROGRESS)
-        progress_bar = "█" * filled_length + "░" * (progress_bar_length - filled_length)
-        
-        await message.reply(
-            f"🥚 *Инкубация яйца*\n\n"
-            f"Прогресс: {new_progress}%\n"
-            f"`{progress_bar}`\n\n"
-            f"Продолжайте использовать /incubate, чтобы ускорить вылупление!",
-            parse_mode="Markdown"
-        )
-        
-        logger.info(f"Игрок {user_id}: прогресс инкубации {new_progress}%")
-    
-    # Добавляем фидбек для аналитики
-    try:
-        await add_feedback(
-            user_id=user_id,
-            command="incubate",
-            status="success" if new_progress >= HATCH_PROGRESS else "in_progress",
-            details={
-                "old_progress": current_progress,
-                "new_progress": new_progress,
-                "hatched": new_progress >= HATCH_PROGRESS
-            }
-        )
+            # Рассчитываем оставшееся время
+            remaining_progress = 100.0 - new_progress
+            remaining_checks = remaining_progress / PROGRESS_PER_CHECK
+            remaining_hours = remaining_checks * INCUBATION_CHECK_INTERVAL / 3600
+            
+            await message.reply(
+                f"🥚 **Инкубация яйца**\n\n"
+                f"📊 Прогресс: {new_progress:.1f}%\n"
+                f"⏳ Осталось примерно: {remaining_hours:.1f} часов\n\n"
+                f"Продолжай инкубировать каждую минуту!"
+            )
+            
+            logger.info(f"Игрок {uid} инкубирует яйцо: {new_progress:.1f}%")
+            
     except Exception as e:
-        logger.warning(f"Не удалось добавить фидбек для {user_id}: {e}")
+        logger.error(f"Ошибка в incubate_cmd: {e}", exc_info=True)
+        await message.reply("❌ Произошла ошибка при инкубации. Попробуй позже.")
 async def feed_cmd(message: types.Message):
     """
     Кормление питомца.
