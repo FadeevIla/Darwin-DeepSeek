@@ -1572,6 +1572,290 @@ async def incubate_cmd(message: types.Message):
         logger.error(f"Неожиданная ошибка при инкубации: {e}")
         await message.reply("❌ Произошла неизвестная ошибка. Попробуй позже или сообщи администратору.")
 
+async def inventory_cmd(message: types.Message):
+    """Показывает инвентарь игрока: аптечки, зелья силы и защиты.
+    
+    Args:
+        message: Объект сообщения от пользователя.
+        
+    Returns:
+        None. Отправляет сообщение с инвентарём или ошибкой.
+    """
+    # Защита от ботов и каналов
+    if message.from_user.is_bot or message.sender_chat:
+        return
+    
+    uid = str(message.from_user.id)
+    
+    try:
+        player = get_player(uid)
+        if not player:
+            await message.reply("❌ Ты ещё не создал питомца! Напиши /start")
+            return
+        
+        # Получаем инвентарь из данных игрока
+        inventory = player.get("inventory", {})
+        if not inventory:
+            inventory = {"medkit": 0, "strength_potion": 0, "defense_potion": 0}
+            update_player(uid, {"inventory": inventory})
+        
+        medkits = inventory.get("medkit", 0)
+        strength_potions = inventory.get("strength_potion", 0)
+        defense_potions = inventory.get("defense_potion", 0)
+        
+        # Формируем сообщение
+        text = (
+            f"🎒 <b>Инвентарь</b>\n\n"
+            f"🩹 Аптечки: {medkits} шт.\n"
+            f"⚔️ Зелья силы: {strength_potions} шт.\n"
+            f"🛡️ Зелья защиты: {defense_potions} шт.\n\n"
+            f"<i>Используй /use [предмет]</i>\n"
+            f"<i>Например: /use аптечка</i>"
+        )
+        
+        await message.reply(text)
+        logger.info(f"Инвентарь показан пользователю {uid}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка показа инвентаря для {uid}: {e}")
+        await message.reply("❌ Произошла ошибка при загрузке инвентаря.")
+
+async def shop_cmd(message: types.Message):
+    """Показывает магазин с товарами для покупки.
+    
+    Args:
+        message: Объект сообщения от пользователя.
+        
+    Returns:
+        None. Отправляет сообщение с товарами магазина.
+    """
+    # Защита от ботов и каналов
+    if message.from_user.is_bot or message.sender_chat:
+        return
+    
+    uid = str(message.from_user.id)
+    
+    try:
+        player = get_player(uid)
+        if not player:
+            await message.reply("❌ Ты ещё не создал питомца! Напиши /start")
+            return
+        
+        coins = player.get("coins", 0)
+        
+        text = (
+            f"🏪 <b>Магазин</b>\n\n"
+            f"💰 Твои монеты: {coins}\n\n"
+            f"<b>Товары:</b>\n"
+            f"1️⃣ Аптечка (+50% HP) — 50 монет\n"
+            f"2️⃣ Зелье силы (+30% атаки) — 100 монет\n"
+            f"3️⃣ Зелье защиты (+30% защиты) — 80 монет\n\n"
+            f"<i>Купить: /buy [номер]</i>\n"
+            f"<i>Например: /buy 1</i>"
+        )
+        
+        await message.reply(text)
+        logger.info(f"Магазин показан пользователю {uid}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка показа магазина для {uid}: {e}")
+        await message.reply("❌ Произошла ошибка при загрузке магазина.")
+
+async def buy_cmd(message: types.Message):
+    """Покупка предмета из магазина.
+    
+    Args:
+        message: Объект сообщения от пользователя.
+        
+    Returns:
+        None. Отправляет сообщение о результате покупки.
+    """
+    # Защита от ботов и каналов
+    if message.from_user.is_bot or message.sender_chat:
+        return
+    
+    uid = str(message.from_user.id)
+    
+    try:
+        player = get_player(uid)
+        if not player:
+            await message.reply("❌ Ты ещё не создал питомца! Напиши /start")
+            return
+        
+        # Парсим номер товара
+        args = message.get_args().strip()
+        if not args or not args.isdigit():
+            await message.reply("❌ Укажи номер товара: /buy [номер]\nНапример: /buy 1")
+            return
+        
+        item_number = int(args)
+        
+        # Определяем товар по номеру
+        shop_items = {
+            1: {"name": "аптечка", "price": 50, "key": "medkit"},
+            2: {"name": "зелье силы", "price": 100, "key": "strength_potion"},
+            3: {"name": "зелье защиты", "price": 80, "key": "defense_potion"}
+        }
+        
+        if item_number not in shop_items:
+            await message.reply("❌ Неверный номер товара. Доступно: 1, 2, 3")
+            return
+        
+        item = shop_items[item_number]
+        coins = player.get("coins", 0)
+        
+        # Проверяем достаточно ли монет
+        if coins < item["price"]:
+            await message.reply(
+                f"❌ Недостаточно монет! Нужно: {item['price']}, у тебя: {coins}\n"
+                f"Заработай монеты в бою: /battle"
+            )
+            return
+        
+        # Обновляем инвентарь и монеты
+        inventory = player.get("inventory", {})
+        if not inventory:
+            inventory = {"medkit": 0, "strength_potion": 0, "defense_potion": 0}
+        
+        inventory[item["key"]] = inventory.get(item["key"], 0) + 1
+        
+        update_player(uid, {
+            "coins": coins - item["price"],
+            "inventory": inventory
+        })
+        
+        await message.reply(
+            f"✅ Куплено: {item['name']} за {item['price']} монет!\n"
+            f"💰 Осталось монет: {coins - item['price']}\n"
+            f"Используй /inventory чтобы увидеть свои предметы"
+        )
+        logger.info(f"Пользователь {uid} купил {item['name']}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка покупки для {uid}: {e}")
+        await message.reply("❌ Произошла ошибка при покупке.")
+
+async def use_cmd(message: types.Message):
+    """Использование предмета из инвентаря.
+    
+    Args:
+        message: Объект сообщения от пользователя.
+        
+    Returns:
+        None. Отправляет сообщение о результате использования предмета.
+    """
+    # Защита от ботов и каналов
+    if message.from_user.is_bot or message.sender_chat:
+        return
+    
+    uid = str(message.from_user.id)
+    
+    try:
+        player = get_player(uid)
+        if not player:
+            await message.reply("❌ Ты ещё не создал питомца! Напиши /start")
+            return
+        
+        # Парсим название предмета
+        args = message.get_args().strip().lower()
+        if not args:
+            await message.reply(
+                "❌ Укажи предмет: /use [предмет]\n"
+                "Доступно: аптечка, зелье силы, зелье защиты"
+            )
+            return
+        
+        inventory = player.get("inventory", {})
+        if not inventory:
+            inventory = {"medkit": 0, "strength_potion": 0, "defense_potion": 0}
+        
+        # Определяем предмет
+        item_map = {
+            "аптечка": {"key": "medkit", "name": "аптечка"},
+            "аптечку": {"key": "medkit", "name": "аптечка"},
+            "зелье силы": {"key": "strength_potion", "name": "зелье силы"},
+            "зелье": {"key": "strength_potion", "name": "зелье силы"},
+            "зелье защиты": {"key": "defense_potion", "name": "зелье защиты"},
+            "защита": {"key": "defense_potion", "name": "зелье защиты"}
+        }
+        
+        if args not in item_map:
+            await message.reply(
+                "❌ Неизвестный предмет. Доступно:\n"
+                "- аптечка (восстанавливает 50% HP)\n"
+                "- зелье силы (+30% к атаке на бой)\n"
+                "- зелье защиты (+30% к защите на бой)"
+            )
+            return
+        
+        item = item_map[args]
+        item_count = inventory.get(item["key"], 0)
+        
+        if item_count <= 0:
+            await message.reply(f"❌ У тебя нет {item['name']}! Купи в магазине: /shop")
+            return
+        
+        # Применяем эффект предмета
+        if item["key"] == "medkit":
+            # Аптечка: восстанавливает 50% от максимального HP
+            max_hp = player.get("max_hp", 100)
+            current_hp = player.get("hp", max_hp)
+            heal_amount = int(max_hp * 0.5)
+            new_hp = min(current_hp + heal_amount, max_hp)
+            
+            inventory[item["key"]] -= 1
+            update_player(uid, {
+                "hp": new_hp,
+                "inventory": inventory
+            })
+            
+            await message.reply(
+                f"🩹 Использована аптечка!\n"
+                f"❤️ Восстановлено {heal_amount} HP\n"
+                f"Текущее HP: {new_hp}/{max_hp}"
+            )
+            logger.info(f"Пользователь {uid} использовал аптечку, восстановлено {heal_amount} HP")
+            
+        elif item["key"] == "strength_potion":
+            # Зелье силы: временный бафф на атаку
+            current_strength = player.get("strength", 10)
+            buff_amount = int(current_strength * 0.3)
+            
+            inventory[item["key"]] -= 1
+            update_player(uid, {
+                "strength": current_strength + buff_amount,
+                "inventory": inventory
+            })
+            
+            await message.reply(
+                f"⚔️ Использовано зелье силы!\n"
+                f"💪 Сила увеличена на {buff_amount}\n"
+                f"Текущая сила: {current_strength + buff_amount}"
+            )
+            logger.info(f"Пользователь {uid} использовал зелье силы, +{buff_amount} к атаке")
+            
+        elif item["key"] == "defense_potion":
+            # Зелье защиты: временный бафф на защиту
+            current_defense = player.get("defense", 10)
+            buff_amount = int(current_defense * 0.3)
+            
+            inventory[item["key"]] -= 1
+            update_player(uid, {
+                "defense": current_defense + buff_amount,
+                "inventory": inventory
+            })
+            
+            await message.reply(
+                f"🛡️ Использовано зелье защиты!\n"
+                f"Защита увеличена на {buff_amount}\n"
+                f"Текущая защита: {current_defense + buff_amount}"
+            )
+            logger.info(f"Пользователь {uid} использовал зелье защиты, +{buff_amount} к защите")
+        
+    except Exception as e:
+        logger.error(f"Ошибка использования предмета для {uid}: {e}")
+        await message.reply("❌ Произошла ошибка при использовании предмета.")
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
