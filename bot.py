@@ -3084,6 +3084,10 @@ if __name__ == "__main__":
     dp.register_message_handler(help_cmd, commands=['help'])
     dp.register_message_handler(stats_cmd, commands=['stats'])
     dp.register_message_handler(report_cmd, commands=['report'])
-    
+    dp.register_message_handler(inventory_cmd, commands=['inventory'])
+    dp.register_message_handler(shop_cmd, commands=['shop'])
+    dp.register_message_handler(buy_cmd, commands=['buy'])
+    dp.register_message_handler(use_cmd, commands=['use'])
+
     logger.info("🐉 Уроборос: Арена запущена!")
     executor.start_polling(dp)
