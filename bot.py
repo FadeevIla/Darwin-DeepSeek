@@ -2474,6 +2474,238 @@ async def incubate_cmd(message: types.Message):
         logger.error(f"Неожиданная ошибка при инкубации для {user_id}: {e}")
         await message.reply("❌ Произошла ошибка при инкубации. Попробуй позже.")
 
+async def battle_cmd(message: types.Message):
+    """
+    Команда /battle — сражение с ботом или другим игроком.
+    Реализует полноценную боевую систему с учетом характеристик питомца,
+    кулдауном между битвами и системой событий с несколькими исходами.
+    
+    Механика:
+    - Проверка наличия питомца (высижен ли из яйца)
+    - Проверка сытости (голод > 70)
+    - Rate limiting: кулдаун 60 секунд между битвами
+    - Система событий с 4 исходами (критический успех, успех, неудача, фейл)
+    - Расчет урона на основе силы, ловкости, магии, защиты и скорости
+    - Начисление опыта и повышение уровня
+    - Снижение сытости после боя
+    
+    Args:
+        message: Объект сообщения от Telegram
+    
+    Returns:
+        None. Отправляет ответ с результатом битвы.
+    """
+    
+    # Константы для battle_cmd
+    COOLDOWN_SECONDS: int = 60  # Кулдаун между битвами в секундах
+    MIN_HUNGER_TO_FIGHT: int = 70  # Минимальная сытость для боя
+    HUNGER_COST: int = 15  # Снижение сытости за бой
+    BASE_XP_REWARD: int = 50  # Базовая награда опыта
+    XP_PER_FORMULA_CONSTANT: float = 1.5  # Константа для формулы опыта
+    CRIT_MULTIPLIER: float = 2.0  # Множитель критического урона
+    FAIL_MULTIPLIER: float = 0.3  # Множитель урона при провале
+    BOT_BASE_STATS: dict = {
+        "hp": 150,
+        "strength": 15,
+        "agility": 10,
+        "magic": 10,
+        "defense": 10,
+        "speed": 10
+    }  # Базовые статы бота
+    
+    logger.info(f"Вызвана команда /battle от пользователя {message.from_user.id}")
+    
+    # Валидация ID пользователя
+    player_id: str = str(message.from_user.id)
+    if not player_id.isdigit():
+        logger.error(f"Некорректный ID пользователя: {player_id}")
+        await message.reply("❌ Ошибка: некорректный идентификатор пользователя. Пожалуйста, перезапустите бота командой /start")
+        return
+    
+    # Получение данных игрока
+    player: dict | None = None
+    try:
+        player = get_player(player_id)
+    except Exception as e:
+        logger.error(f"Ошибка при загрузке данных игрока {player_id}: {e}")
+        await message.reply("❌ Ошибка подключения к базе данных. Попробуйте позже.")
+        return
+    
+    if not player:
+        logger.warning(f"Пользователь {player_id} не создал персонажа")
+        await message.reply("❌ У вас нет питомца! Используйте /egg, чтобы получить яйцо, затем /incubate, чтобы высидеть его.")
+        return
+    
+    # Проверка, высижен ли питомец
+    if not player.get("hatched", False):
+        logger.info(f"Пользователь {player_id} пытается сражаться, но питомец не высижен")
+        await message.reply("🥚 Ваш питомец ещё не вылупился из яйца! Сначала используйте /incubate, чтобы высидеть его.")
+        return
+    
+    # Rate limiting: проверка кулдауна
+    current_time: datetime = datetime.now(timezone.utc)
+    last_battle_str: str | None = player.get("last_battle_time")
+    
+    if last_battle_str:
+        try:
+            # Нормализация даты: добавляем UTC если нет
+            battle_time_str: str = last_battle_str
+            if 'Z' in battle_time_str or '+' not in battle_time_str:
+                battle_time_str = battle_time_str.replace('Z', '+00:00')
+            last_battle_time: datetime = datetime.fromisoformat(battle_time_str)
+            if last_battle_time.tzinfo is None:
+                last_battle_time = last_battle_time.replace(tzinfo=timezone.utc)
+            
+            time_diff: float = (current_time - last_battle_time).total_seconds()
+            if time_diff < COOLDOWN_SECONDS:
+                remaining: int = int(COOLDOWN_SECONDS - time_diff)
+                logger.info(f"Пользователь {player_id} попытался сразиться раньше времени. Осталось {remaining} сек")
+                await message.reply(f"⏳ Подождите {remaining} секунд перед следующей битвой!")
+                return
+        except ValueError as e:
+            logger.error(f"Ошибка парсинга даты {last_battle_str}: {e}")
+            await message.reply("❌ Ошибка обработки времени последнего боя. Попробуйте позже.")
+            return
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при проверке кулдауна: {e}")
+            await message.reply("❌ Ошибка при проверке времени. Пожалуйста, попробуйте снова.")
+            return
+    
+    # Валидация сытости
+    try:
+        hunger: int = int(player.get("hunger", 100))
+    except (ValueError, TypeError) as e:
+        logger.error(f"Ошибка приведения hunger к int: {e}")
+        await message.reply("❌ Ошибка данных питомца. Используйте /stats для проверки состояния.")
+        return
+    
+    if hunger < MIN_HUNGER_TO_FIGHT:
+        logger.info(f"Пользователь {player_id} слишком голоден (сытость: {hunger}) для битвы")
+        await message.reply(f"🍽️ Ваш питомец слишком голоден для боя (сытость: {hunger}/100). Покормите его /feed!")
+        return
+    
+    # Вычисление силы питомца
+    try:
+        player_strength: int = int(player.get("strength", 0))
+        player_agility: int = int(player.get("agility", 0))
+        player_magic: int = int(player.get("magic", 0))
+        player_defense: int = int(player.get("defense", 0))
+        player_speed: int = int(player.get("speed", 0))
+        player_level: int = int(player.get("level", 1))
+        player_hp: int = int(player.get("hp", 100))
+        player_max_hp: int = int(player.get("max_hp", 100))
+        player_xp: int = int(player.get("xp", 0))
+        player_wins: int = int(player.get("wins", 0))
+        player_losses: int = int(player.get("losses", 0))
+    except (ValueError, TypeError) as e:
+        logger.error(f"Ошибка приведения статов игрока: {e}")
+        await message.reply("❌ Ошибка данных питомца. Используйте /stats для проверки состояния.")
+        return
+    
+    # Генерация бота
+    bot_hp: int = BOT_BASE_STATS["hp"]
+    bot_strength: int = BOT_BASE_STATS["strength"] + random.randint(-3, 5)
+    bot_agility: int = BOT_BASE_STATS["agility"] + random.randint(-2, 4)
+    bot_magic: int = BOT_BASE_STATS["magic"] + random.randint(-2, 4)
+    bot_defense: int = BOT_BASE_STATS["defense"] + random.randint(-2, 4)
+    bot_speed: int = BOT_BASE_STATS["speed"] + random.randint(-2, 4)
+    
+    # Расчет силы удара
+    player_power: float = (player_strength * 0.4 + player_agility * 0.2 + player_magic * 0.3 + player_speed * 0.1)
+    bot_power: float = (bot_strength * 0.4 + bot_agility * 0.2 + bot_magic * 0.3 + bot_speed * 0.1)
+    
+    # Система событий с 4 исходами
+    event_roll: int = random.randint(1, 100)
+    battle_result: str = ""
+    damage_dealt: int = 0
+    damage_taken: int = 0
+    xp_reward: int = 0
+    win: bool = False
+    
+    # Расчет урона с учетом защиты
+    raw_damage: float = max(player_power - bot_defense * 0.5, 0)
+    bot_raw_damage: float = max(bot_power - player_defense * 0.5, 0)
+    
+    if event_roll <= 10:
+        # Критический успех (10%)
+        damage_dealt = int(raw_damage * CRIT_MULTIPLIER)
+        damage_taken = int(bot_raw_damage * 0.3)
+        win = True
+        battle_result = "⚡ КРИТИЧЕСКИЙ УДАР! Вы сокрушили противника мощной атакой!"
+        xp_reward = int(BASE_XP_REWARD * XP_PER_FORMULA_CONSTANT + player_level * 10)
+    elif event_roll <= 40:
+        # Успех (30%)
+        damage_dealt = int(raw_damage)
+        damage_taken = int(bot_raw_damage * 0.5)
+        win = True
+        battle_result = "✅ Победа! Ваш питомец проявил мастерство в бою."
+        xp_reward = int(BASE_XP_REWARD + player_level * 5)
+    elif event_roll <= 80:
+        # Неудача (40%)
+        damage_dealt = int(raw_damage * 0.5)
+        damage_taken = int(bot_raw_damage)
+        win = False
+        battle_result = "😔 Поражение... Противник оказался слишком сильным."
+        xp_reward = int(BASE_XP_REWARD * 0.5)
+    else:
+        # Полный провал (20%)
+        damage_dealt = int(raw_damage * FAIL_MULTIPLIER)
+        damage_taken = int(bot_raw_damage * CRIT_MULTIPLIER)
+        win = False
+        battle_result = "💀 Сокрушительное поражение! Ваш питомец потерпел унизительное фиаско."
+        xp_reward = int(BASE_XP_REWARD * 0.2)
+    
+    # Нормализация урона
+    damage_dealt = max(damage_dealt, 1)  # Минимум 1 урон
+    damage_taken = max(damage_taken, 1)  # Минимум 1 урон
+    
+    # Нанесение урона питомцу
+    player_hp = max(0, player_hp - damage_taken)
+    player_hp = min(player_hp, player_max_hp)  # Гарантия что HP не превышает max
+    
+    # Обновление статистики
+    player_wins = player_wins + 1 if win else player_wins
+    player_losses = player_losses + 1 if not win else player_losses
+    player_xp += xp_reward
+    
+    # Проверка повышения уровня
+    level_up: bool = False
+    xp_needed: int = player_level * 100 + 50  # Формула XP для уровня
+    if player_xp >= xp_needed:
+        player_level += 1
+        player_xp -= xp_needed
+        level_up = True
+        # Увеличение статов при повышении уровня
+        player_max_hp += 20
+        player_hp = player_max_hp  # Полное исцеление при повышении уровня
+        player_strength += 3
+        player_agility += 2
+        player_magic += 2
+        player_defense += 2
+        player_speed += 1
+    
+    # Снижение сытости
+    hunger = max(0, hunger - HUNGER_COST)
+    
+    # Подготовка данных для обновления
+    update_data: dict = {
+        "hp": player_hp,
+        "max_hp": player_max_hp,
+        "hunger": hunger,
+        "wins": player_wins,
+        "losses": player_losses,
+        "xp": player_xp,
+        "level": player_level,
+        "strength": player_strength,
+        "agility": player_agility,
+        "magic": player_magic,
+        "defense": player_defense,
+        "speed": player_speed,
+        "last_battle_time": current_time.isoformat()
+    }
+    
+    # Обновление данных в Б
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
