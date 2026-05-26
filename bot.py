@@ -3064,6 +3064,112 @@ async def battle_cmd(message: types.Message):
             recover_hp_player = int(player.get('max_hp', 100) * FALL_RECOVER_PCT)
             recover_hp_opp = int(opponent_data.get('max_hp', 100) * FALL_RECOVER_PCT) if is_pvp else recover_hp_player
 
+async def incubate_cmd(message: types.Message):
+    """Инкубация яйца питомца.
+    
+    Позволяет игроку инкубировать яйцо, увеличивая прогресс инкубации.
+    При достижении 100% яйцо вылупляется, и игрок получает питомца.
+    
+    Args:
+        message: Объект сообщения от пользователя
+        
+    Returns:
+        None
+    """
+    INCUBATION_STEP = 20  # Шаг прогресса инкубации за одну команду
+    MAX_INCUBATION = 100  # Максимальный прогресс инкубации
+    MIN_LEVEL_FOR_INCUBATION = 1  # Минимальный уровень для инкубации
+    
+    try:
+        uid = str(message.from_user.id)
+        player = get_player(uid)
+        
+        if not player:
+            await message.reply("❌ Ты не создал питомца! Используй /start")
+            return
+        
+        # Проверка, что у игрока есть яйцо
+        if player.get("hatched", False):
+            await message.reply("🐣 Твой питомец уже вылупился! Используй /feed, /train, /battle")
+            return
+        
+        # Проверка уровня для инкубации
+        if player.get("level", 0) < MIN_LEVEL_FOR_INCUBATION:
+            await message.reply(f"❌ Нужен уровень {MIN_LEVEL_FOR_INCUBATION}+ для инкубации")
+            return
+        
+        # Получаем текущий прогресс инкубации
+        current_progress = player.get("inc_progress", 0)
+        
+        # Проверка, что прогресс не максимальный
+        if current_progress >= MAX_INCUBATION:
+            # Вылупление питомца
+            pet = random_pet()
+            update_data = {
+                "hatched": True,
+                "inc_progress": MAX_INCUBATION,
+                "pet_name": pet["name"],
+                "pet_emoji": pet["emoji"],
+                "hp": pet["hp"],
+                "max_hp": pet["max_hp"],
+                "strength": pet["strength"],
+                "agility": pet["agility"],
+                "magic": pet["magic"],
+                "defense": pet["defense"],
+                "speed": pet["speed"],
+                "hunger": pet["hunger"],
+                "mood": pet["mood"],
+                "level": pet["level"],
+                "xp": pet["xp"],
+                "wins": pet["wins"],
+                "losses": pet["losses"]
+            }
+            update_player(uid, update_data)
+            
+            await message.reply(
+                f"🎉 Яйцо вылупилось!\n\n"
+                f"Поздравляю! У тебя появился {pet['emoji']} {pet['name']}!\n"
+                f"Характеристики:\n"
+                f"❤️ HP: {pet['hp']}/{pet['max_hp']}\n"
+                f"⚔️ Сила: {pet['strength']}\n"
+                f"🏃 Ловкость: {pet['agility']}\n"
+                f"🔮 Магия: {pet['magic']}\n"
+                f"🛡️ Защита: {pet['defense']}\n"
+                f"💨 Скорость: {pet['speed']}\n\n"
+                f"Используй /feed, /train, /battle чтобы развивать питомца!"
+            )
+            
+            logger.info(f"Игрок {uid} вылупил питомца {pet['name']}")
+            return
+        
+        # Увеличиваем прогресс инкубации
+        new_progress = min(current_progress + INCUBATION_STEP, MAX_INCUBATION)
+        update_player(uid, {"inc_progress": new_progress})
+        
+        # Создаем визуальный прогресс-бар
+        progress_bar_length = 10
+        filled_length = int(progress_bar_length * new_progress / MAX_INCUBATION)
+        progress_bar = "🟩" * filled_length + "⬜" * (progress_bar_length - filled_length)
+        
+        await message.reply(
+            f"🥚 Инкубация яйца...\n\n"
+            f"Прогресс: {new_progress}%\n"
+            f"{progress_bar}\n\n"
+            f"Используй /incubate снова, чтобы продолжить!"
+        )
+        
+        logger.info(f"Игрок {uid} инкубирует яйцо: {new_progress}%")
+        
+    except KeyError as e:
+        logger.error(f"Ошибка доступа к данным игрока: {e}")
+        await message.reply("❌ Ошибка при загрузке данных игрока")
+    except ValueError as e:
+        logger.error(f"Ошибка преобразования данных: {e}")
+        await message.reply("❌ Ошибка при обработке данных")
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка в incubate_cmd: {e}")
+        await message.reply("❌ Произошла ошибка при инкубации. Попробуй позже.")
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
