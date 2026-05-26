@@ -1856,6 +1856,134 @@ async def use_cmd(message: types.Message):
         logger.error(f"Ошибка использования предмета для {uid}: {e}")
         await message.reply("❌ Произошла ошибка при использовании предмета.")
 
+async def incubate_cmd(message: types.Message):
+    """Инкубирует яйцо питомца, увеличивая прогресс инкубации.
+    
+    Игрок может инкубировать яйцо каждые 30 минут.
+    Каждая инкубация добавляет 10-25% к прогрессу.
+    При достижении 100% яйцо вылупляется.
+    
+    Args:
+        message: Объект сообщения от пользователя
+        
+    Returns:
+        None
+    """
+    try:
+        uid = str(message.from_user.id)
+        player = get_player(uid)
+        
+        if not player:
+            await message.reply("❌ Сначала создай питомца через /start!")
+            return
+        
+        # Проверка, что яйцо не вылупилось
+        if player.get("hatched", False):
+            await message.reply("🐣 Твой питомец уже вылупился! Используй /feed, /train, /battle")
+            return
+        
+        # Проверка кулдауна инкубации (30 минут)
+        COOLDOWN_MINUTES = 30
+        last_incubate = player.get("last_incubate")
+        
+        if last_incubate:
+            try:
+                last_time = datetime.fromisoformat(last_incubate)
+                now = datetime.now(timezone.utc)
+                diff_minutes = (now - last_time).total_seconds() / 60
+                
+                if diff_minutes < COOLDOWN_MINUTES:
+                    remaining = int(COOLDOWN_MINUTES - diff_minutes)
+                    await message.reply(
+                        f"⏳ Подожди ещё {remaining} мин. перед следующей инкубацией!\n"
+                        f"Текущий прогресс: {player.get('inc_progress', 0)}%"
+                    )
+                    return
+            except (ValueError, TypeError):
+                # Если дата некорректна, игнорируем кулдаун
+                pass
+        
+        # Вычисляем прогресс инкубации
+        MIN_PROGRESS = 10
+        MAX_PROGRESS = 25
+        progress_gain = random.randint(MIN_PROGRESS, MAX_PROGRESS)
+        
+        current_progress = player.get("inc_progress", 0)
+        new_progress = min(current_progress + progress_gain, 100)
+        
+        # Обновляем данные
+        update_data = {
+            "inc_progress": new_progress,
+            "last_incubate": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Проверка на вылупление
+        if new_progress >= 100:
+            update_data["hatched"] = True
+            update_data["inc_progress"] = 100
+            
+            # Даём бонусные характеристики при вылуплении
+            BONUS_HP = 20
+            BONUS_STATS = 5
+            
+            update_data["hp"] = player.get("hp", 100) + BONUS_HP
+            update_data["max_hp"] = player.get("max_hp", 100) + BONUS_HP
+            update_data["strength"] = player.get("strength", 10) + BONUS_STATS
+            update_data["agility"] = player.get("agility", 10) + BONUS_STATS
+            update_data["magic"] = player.get("magic", 10) + BONUS_STATS
+            update_data["defense"] = player.get("defense", 10) + BONUS_STATS
+            update_data["speed"] = player.get("speed", 10) + BONUS_STATS
+            
+            update_player(uid, update_data)
+            
+            pet_name = player.get("pet_name", "Питомец")
+            pet_emoji = player.get("pet_emoji", "🐣")
+            
+            await message.reply(
+                f"🎉 **ЯЙЦО ВЫЛУПИЛОСЬ!** 🎉\n\n"
+                f"{pet_emoji} **{pet_name}** появился на свет!\n"
+                f"📈 Бонус к характеристикам:\n"
+                f"❤️ HP +{BONUS_HP}\n"
+                f"⚔️ Сила +{BONUS_STATS}\n"
+                f"🏃 Ловкость +{BONUS_STATS}\n"
+                f"🔮 Магия +{BONUS_STATS}\n"
+                f"🛡️ Защита +{BONUS_STATS}\n"
+                f"💨 Скорость +{BONUS_STATS}\n\n"
+                f"Теперь ты можешь:\n"
+                f"🍖 /feed - покормить питомца\n"
+                f"💪 /train - тренировать\n"
+                f"⚔️ /battle - сразиться на арене"
+            )
+            
+            logger.info(f"Игрок {uid}: яйцо вылупилось, питомец {pet_name}")
+        else:
+            update_player(uid, update_data)
+            
+            # Прогресс-бар для наглядности
+            BAR_LENGTH = 10
+            filled = new_progress // BAR_LENGTH
+            empty = BAR_LENGTH - filled
+            progress_bar = "🟩" * filled + "⬜" * empty
+            
+            await message.reply(
+                f"🥚 **Инкубация яйца**\n\n"
+                f"Прогресс: {new_progress}%\n"
+                f"{progress_bar}\n\n"
+                f"➕ Добавлено: +{progress_gain}%\n"
+                f"⏳ Следующая инкубация через {COOLDOWN_MINUTES} мин."
+            )
+            
+            logger.info(f"Игрок {uid}: инкубация +{progress_gain}%, всего {new_progress}%")
+        
+        # Добавляем опыт за инкубацию
+        INCUBATE_XP = 5
+        current_xp = player.get("xp", 0)
+        update_player(uid, {"xp": current_xp + INCUBATE_XP})
+        
+    except Exception as e:
+        logger.error(f"Ошибка в incubate_cmd для пользователя {message.from_user.id}: {e}")
+        await message.reply("❌ Произошла ошибка при инкубации. Попробуй позже.")
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
