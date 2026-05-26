@@ -2827,6 +2827,243 @@ async def incubate_cmd(message: types.Message):
         logger.error(f"Ошибка в incubate_cmd для пользователя {message.from_user.id}: {e}")
         await message.reply("❌ Произошла ошибка при инкубации яйца. Попробуй позже.")
 
+async def battle_cmd(message: types.Message):
+    """Битва с ботом или другим игроком по /battle [@username].
+    
+    Механика:
+    - Если указан @username — PvP-битва с кулдауном 60 секунд
+    - Если без username — PvE-битва с ботом
+    - Расчёт урона: (strength * 1.5 + agility * 0.8 + magic * 1.2) * random(0.8..1.2) - defense * 0.5
+    - Победа даёт XP = 15..25, поражение = 5..10
+    - При HP <= 0 питомец "падает" и восстанавливает 20% HP
+    
+    Константы:
+    - CD_PVP: кулдаун для PvP (60 секунд)
+    - DMG_STR_COEF: множитель силы (1.5)
+    - DMG_AGI_COEF: множитель ловкости (0.8)
+    - DMG_MAG_COEF: множитель магии (1.2)
+    - DMG_DEF_COEF: множитель защиты (0.5)
+    - DMG_RANDOM_MIN: минимальный случайный множитель (0.8)
+    - DMG_RANDOM_MAX: максимальный случайный множитель (1.2)
+    - XP_WIN_MIN: минимальный XP за победу (15)
+    - XP_WIN_MAX: максимальный XP за победу (25)
+    - XP_LOSE_MIN: минимальный XP за поражение (5)
+    - XP_LOSE_MAX: максимальный XP за поражение (10)
+    - FALL_RECOVER_PCT: процент восстановления HP при падении (0.2)
+    - MIN_HP_FOR_BATTLE: минимальное HP для участия в битве (1)
+    - MAX_HUNGER_FOR_BATTLE: максимальный голод для битвы (80)
+    """
+    # Константы
+    CD_PVP = 60
+    DMG_STR_COEF = 1.5
+    DMG_AGI_COEF = 0.8
+    DMG_MAG_COEF = 1.2
+    DMG_DEF_COEF = 0.5
+    DMG_RANDOM_MIN = 0.8
+    DMG_RANDOM_MAX = 1.2
+    XP_WIN_MIN = 15
+    XP_WIN_MAX = 25
+    XP_LOSE_MIN = 5
+    XP_LOSE_MAX = 10
+    FALL_RECOVER_PCT = 0.2
+    MIN_HP_FOR_BATTLE = 1
+    MAX_HUNGER_FOR_BATTLE = 80
+    
+    uid = str(message.from_user.id)
+    
+    # Валидация и загрузка данных игрока
+    if not uid.isdigit():
+        await message.reply("❌ Некорректный идентификатор пользователя.")
+        return
+    
+    player = get_player(uid)
+    if not player:
+        logger.info(f"Игрок {uid} не найден. Создаю нового.")
+        player = create_player(uid)
+        if not player:
+            await message.reply("❌ Не удалось создать профиль. Попробуй позже.")
+            return
+    
+    # Валидация данных игрока
+    hp = max(0, int(player.get('hp', 0)))
+    hunger = min(100, max(0, int(player.get('hunger', 50))))
+    level = max(1, int(player.get('level', 1)))
+    pet_name = str(player.get('pet_name', 'Питомец'))
+    pet_emoji = str(player.get('pet_emoji', '🐉'))
+    hatched = player.get('hatched', False)
+    
+    if not hatched:
+        await message.reply(f"🐣 Сначала высиди яйцо через /incubate!")
+        return
+    
+    if hp < MIN_HP_FOR_BATTLE:
+        await message.reply(f"💤 {pet_emoji} {pet_name} слишком слаб для битвы (HP: {hp}). Отдохни и покорми!")
+        return
+    
+    if hunger > MAX_HUNGER_FOR_BATTLE:
+        await message.reply(f"🍽️ {pet_emoji} {pet_name} слишком голоден (голод: {hunger}%). Покорми через /feed!")
+        return
+    
+    # Разбор аргументов (PvP или PvE)
+    args = message.get_args().strip()
+    is_pvp = False
+    opponent_id = None
+    opponent_name = "Бот-воин"
+    opponent_emoji = "🤖"
+    
+    if args:
+        # PvP: ожидаем @username
+        if not args.startswith('@'):
+            await message.reply("❌ Укажи @username противника. Пример: /battle @player123")
+            return
+        
+        username = args[1:]  # убираем @
+        if not username:
+            await message.reply("❌ Имя пользователя не может быть пустым.")
+            return
+        
+        # Проверка кулдауна для PvP
+        now = datetime.now(timezone.utc)
+        last_pvp = player.get('last_pvp_at')
+        if last_pvp:
+            try:
+                last_pvp_dt = datetime.fromisoformat(str(last_pvp))
+                if (now - last_pvp_dt).total_seconds() < CD_PVP:
+                    remaining = CD_PVP - int((now - last_pvp_dt).total_seconds())
+                    await message.reply(
+                        f"⏳ Кулдаун PvP: {remaining} сек. Подожди!",
+                        parse_mode=types.ParseMode.HTML
+                    )
+                    return
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Ошибка парсинга last_pvp для {uid}: {e}")
+        
+        # Поиск противника по username
+        opponent_data = get_player_by_username(username)
+        if not opponent_data:
+            await message.reply(f"❌ Игрок @{username} не найден в базе данных.")
+            return
+        
+        opponent_uid = str(opponent_data.get('user_id'))
+        if not opponent_uid or not opponent_uid.isdigit():
+            await message.reply("❌ Некорректные данные противника.")
+            return
+        
+        if opponent_uid == uid:
+            await message.reply("❌ Нельзя сражаться с самим собой!")
+            return
+        
+        opponent_id = opponent_uid
+        opponent_name = str(opponent_data.get('pet_name', 'Противник'))
+        opponent_emoji = str(opponent_data.get('pet_emoji', '🐉'))
+        is_pvp = True
+        logger.info(f"PvP битва: {uid} vs {opponent_uid}")
+    
+    # Нормализация характеристик
+    strength = max(1, int(player.get('strength', 5)))
+    agility = max(1, int(player.get('agility', 5)))
+    magic = max(1, int(player.get('magic', 5)))
+    defense = max(1, int(player.get('defense', 5)))
+    
+    if is_pvp and opponent_id:
+        opp_strength = max(1, int(opponent_data.get('strength', 5)))
+        opp_agility = max(1, int(opponent_data.get('agility', 5)))
+        opp_magic = max(1, int(opponent_data.get('magic', 5)))
+        opp_defense = max(1, int(opponent_data.get('defense', 5)))
+        opp_hp = max(0, int(opponent_data.get('hp', 0)))
+    else:
+        # PvE: бот с характеристиками на основе уровня
+        opp_strength = 4 + level
+        opp_agility = 3 + level // 2
+        opp_magic = 2 + level // 3
+        opp_defense = 3 + level // 2
+        opp_hp = 30 + level * 5
+    
+    # Расчёт урона
+    def calc_damage(strength, agility, magic, defense):
+        base_damage = (strength * DMG_STR_COEF) + (agility * DMG_AGI_COEF) + (magic * DMG_MAG_COEF)
+        variance = random.uniform(DMG_RANDOM_MIN, DMG_RANDOM_MAX)
+        raw_damage = base_damage * variance
+        reduced_damage = max(1, raw_damage - (defense * DMG_DEF_COEF))
+        return int(round(reduced_damage))
+    
+    player_damage = calc_damage(strength, agility, magic, opp_defense)
+    opponent_damage = calc_damage(opp_strength, opp_agility, opp_magic, defense)
+    
+    # Логика битвы
+    new_hp = max(0, hp - opponent_damage)
+    new_opp_hp = max(0, opp_hp - player_damage)
+    
+    player_wins = new_opp_hp <= 0
+    opponent_wins = new_hp <= 0
+    
+    if new_opp_hp <= 0 or new_hp <= 0:
+        # Кто-то проиграл
+        if new_opp_hp <= 0 and new_hp > 0:
+            # Игрок победил
+            xp_gain = random.randint(XP_WIN_MIN, XP_WIN_MAX)
+            wins = int(player.get('wins', 0)) + 1
+            new_xp = int(player.get('xp', 0)) + xp_gain
+            logger.info(f"Игрок {uid} победил в битве (XP: +{xp_gain})")
+            
+            # Обновление противника (PvP)
+            if is_pvp and opponent_id:
+                opp_losses = int(opponent_data.get('losses', 0)) + 1
+                update_player(opponent_id, {
+                    'hp': new_opp_hp,
+                    'losses': opp_losses,
+                    'last_pvp_at': datetime.now(timezone.utc).isoformat()
+                })
+            
+            update_player(uid, {
+                'hp': new_hp,
+                'xp': new_xp,
+                'wins': wins,
+                'last_pvp_at': datetime.now(timezone.utc).isoformat() if is_pvp else player.get('last_pvp_at')
+            })
+            
+            await message.reply(
+                f"⚔️ <b>ПОБЕДА!</b>\n"
+                f"{pet_emoji} <b>{pet_name}</b> одолел {opponent_emoji} {opponent_name}!\n"
+                f"🔥 Урон: {player_damage} → {player_damage} (ваш: {player_damage}, противник: {opponent_damage})\n"
+                f"❤️ HP: {new_hp}\n"
+                f"⭐ XP: +{xp_gain}",
+                parse_mode=types.ParseMode.HTML
+            )
+            
+        elif new_hp <= 0 and new_opp_hp > 0:
+            # Игрок проиграл
+            xp_gain = random.randint(XP_LOSE_MIN, XP_LOSE_MAX)
+            losses = int(player.get('losses', 0)) + 1
+            new_xp = int(player.get('xp', 0)) + xp_gain
+            
+            # Восстановление 20% HP при падении
+            recover_hp = int(player.get('max_hp', 100) * FALL_RECOVER_PCT)
+            recover_hp = max(1, recover_hp)
+            new_hp = recover_hp
+            
+            logger.info(f"Игрок {uid} проиграл в битве (XP: +{xp_gain}, HP восстановлено: {recover_hp})")
+            
+            update_player(uid, {
+                'hp': new_hp,
+                'xp': new_xp,
+                'losses': losses,
+                'last_pvp_at': datetime.now(timezone.utc).isoformat() if is_pvp else player.get('last_pvp_at')
+            })
+            
+            await message.reply(
+                f"💀 <b>ПОРАЖЕНИЕ...</b>\n"
+                f"{pet_emoji} {pet_name} пал в бою с {opponent_emoji} {opponent_name}!\n"
+                f"🔥 Урон: ваш {player_damage}, противник {opponent_damage}\n"
+                f"💤 Восстановлено HP: +{recover_hp}\n"
+                f"⭐ XP: +{xp_gain}",
+                parse_mode=types.ParseMode.HTML
+            )
+        else:
+            # Ничья (оба упали)
+            recover_hp_player = int(player.get('max_hp', 100) * FALL_RECOVER_PCT)
+            recover_hp_opp = int(opponent_data.get('max_hp', 100) * FALL_RECOVER_PCT) if is_pvp else recover_hp_player
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
