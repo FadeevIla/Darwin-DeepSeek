@@ -2375,6 +2375,105 @@ async def incubate_cmd(message: types.Message):
         logger.error(f"Ошибка при инкубации для {user_id}: {e}", exc_info=True)
         await message.reply("❌ Произошла ошибка при инкубации. Попробуй позже.")
 
+async def incubate_cmd(message: types.Message):
+    """Инкубация яйца питомца.
+    
+    Позволяет игроку инкубировать яйцо, если оно ещё не вылупилось.
+    Инкубация требует прогресса (inc_progress), который увеличивается при каждом вызове.
+    После достижения 100% яйцо вылупляется, и питомец становится активным.
+    
+    Args:
+        message: Сообщение от пользователя с командой /incubate
+        
+    Returns:
+        None: Отправляет ответ пользователю через message.reply()
+    """
+    # Константы
+    INCUBATION_THRESHOLD = 100
+    INCUBATION_STEP = 25
+    MIN_INCUBATION_STEP = 10
+    MAX_INCUBATION_STEP = 40
+    
+    user_id = str(message.from_user.id)
+    
+    try:
+        # Валидация: проверяем существование игрока
+        player = get_player(user_id)
+        if not player:
+            await message.reply("❌ Сначала создай питомца через /start!")
+            return
+        
+        # Валидация: проверяем, не вылупился ли уже питомец
+        if player.get("hatched", False):
+            await message.reply("🐣 Твой питомец уже вылупился! Используй /feed, /train или /battle.")
+            return
+        
+        # Валидация: проверяем наличие яйца
+        current_progress = player.get("inc_progress", 0)
+        if current_progress is None:
+            current_progress = 0
+        
+        # Логируем текущее состояние
+        logger.info(f"Инкубация для {user_id}: текущий прогресс {current_progress}%")
+        
+        # Увеличиваем прогресс инкубации с вариативностью
+        incubation_step = random.randint(MIN_INCUBATION_STEP, MAX_INCUBATION_STEP)
+        new_progress = min(current_progress + incubation_step, INCUBATION_THRESHOLD)
+        
+        # Проверяем, достигнут ли порог вылупления
+        if new_progress >= INCUBATION_THRESHOLD:
+            # Вылупление питомца
+            update_data = {
+                "hatched": True,
+                "inc_progress": INCUBATION_THRESHOLD,
+                "hp": player.get("max_hp", 100),
+                "mood": "счастлив",
+                "hunger": 50
+            }
+            update_player(user_id, update_data)
+            
+            # Формируем сообщение о вылуплении
+            pet_name = player.get("pet_name", "Питомец")
+            pet_emoji = player.get("pet_emoji", "🐉")
+            response_text = (
+                f"🎉 *Яйцо вылупилось!*\n\n"
+                f"{pet_emoji} *{pet_name}* появился на свет!\n"
+                f"Теперь ты можешь:\n"
+                f"• /feed — покормить питомца\n"
+                f"• /train — тренировать питомца\n"
+                f"• /battle — сразиться на арене\n"
+                f"• /stats — посмотреть характеристики"
+            )
+            logger.info(f"Питомец {user_id} успешно вылупился")
+        else:
+            # Обновляем прогресс инкубации
+            update_player(user_id, {"inc_progress": new_progress})
+            
+            # Рассчитываем оставшийся прогресс
+            remaining = INCUBATION_THRESHOLD - new_progress
+            progress_bar = "▓" * (new_progress // 10) + "░" * (remaining // 10)
+            
+            response_text = (
+                f"🥚 *Инкубация яйца*\n\n"
+                f"Прогресс: {new_progress}%\n"
+                f"`{progress_bar}`\n\n"
+                f"Осталось: {remaining}%\n"
+                f"Продолжай инкубировать командой /incubate!"
+            )
+            logger.info(f"Прогресс инкубации {user_id}: {current_progress}% -> {new_progress}%")
+        
+        await message.reply(response_text, parse_mode="Markdown")
+        
+    except KeyError as e:
+        logger.error(f"Ошибка доступа к данным игрока {user_id}: {e}")
+        await message.reply("❌ Ошибка в данных питомца. Попробуй /start заново.")
+    except ValueError as e:
+        logger.error(f"Ошибка валидации данных для {user_id}: {e}")
+        await message.reply("❌ Некорректные данные. Попробуй позже.")
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка при инкубации для {user_id}: {e}")
+        await message.reply("❌ Произошла ошибка при инкубации. Попробуй позже.")
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
