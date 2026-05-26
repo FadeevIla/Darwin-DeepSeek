@@ -13,5 +13,10 @@
     "text": "Удали ВСЕ дубликаты функций (incubate_cmd, battle_cmd, train_cmd, top_cmd). Оставь только ПОСЛЕДНЮЮ версию каждой функции. Сейчас в коде 7 incubate_cmd, 3 battle_cmd — это ломает бота.",
     "author": "admin",
     "timestamp": "2026-05-26T05:29:11.456223+00:00"
+  },
+  {
+    "text": "Обнови /help: добавь команды /inventory, /shop, /buy, /use. И удали дубликаты функций.",
+    "author": "admin",
+    "timestamp": "2026-05-26T05:29:12.593624+00:00"
   }
 ]
