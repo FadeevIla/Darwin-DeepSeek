@@ -145,13 +145,13 @@ class DarwinOrchestrator:
         self.logger.info(f"Патч применён: {len(patched_code)} байт")
         return patched_code
 
-def _insert_before_main(self, code: str, new_func: str) -> str:
-    """Вставляет новую функцию перед if __name__ == '__main__':"""
-    marker = 'if __name__ == "__main__":'
-    if marker in code:
-        return code.replace(marker, new_func.strip() + '\n\n' + marker, 1)
-    return code + '\n\n' + new_func.strip()
-
+    def _insert_before_main(self, code: str, new_func: str) -> str:
+        """Вставляет новую функцию перед if __name__ == '__main__':"""
+        marker = 'if __name__ == "__main__":'
+        if marker in code:
+            return code.replace(marker, new_func.strip() + '\n\n' + marker, 1)
+        return code + '\n\n' + new_func.strip()
+    
     def _sync_feedback(self):
         """Сохраняет feedback.json в репозиторий (если есть локальные изменения)."""
         if not os.path.exists("feedback.json"):
