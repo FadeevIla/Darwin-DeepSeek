@@ -1686,79 +1686,154 @@ async def shop_cmd(message: types.Message):
         await message.reply("❌ Произошла ошибка при загрузке магазина.")
 
 async def buy_cmd(message: types.Message):
-    """Покупка предмета из магазина.
-    
-    Args:
-        message: Объект сообщения от пользователя.
-        
-    Returns:
-        None. Отправляет сообщение о результате покупки.
     """
-    # Защита от ботов и каналов
-    if message.from_user.is_bot or message.sender_chat:
+    Обработчик команды /buy — покупка предметов в магазине Тамагочи-Арены.
+    
+    Формат: /buy <название_предмета>
+    
+    Доступные предметы:
+    - "зелье" (50 монет) — восстанавливает 30 HP
+    - "свиток" (100 монет) — даёт 50 XP
+    - "амулет" (200 монет) — увеличивает защиту на 5
+    - "еда" (30 монет) — снижает голод на 40
+    - "тренировка" (80 монет) — повышает все характеристики на 2
+    
+    Система кулдауна: предметы одного типа можно покупать не чаще 1 раза в минуту.
+    Инвентарь: у игрока есть инвентарь, где хранятся предметы (в БД поле inventory — JSON).
+    """
+    
+    # Константы
+    MIN_NAME_LENGTH = 1
+    MAX_NAME_LENGTH = 50
+    COOLDOWN_SECONDS = 60  # 1 минута кулдаун
+    
+    # Валидация аргументов
+    args = message.get_args()
+    if not args or len(args) < MIN_NAME_LENGTH:
+        await message.reply("❌ Укажи название предмета. Пример: /buy зелье")
         return
     
-    uid = str(message.from_user.id)
+    # Нормализация и валидация названия предмета
+    item_name = args.strip().lower()
+    if len(item_name) > MAX_NAME_LENGTH:
+        await message.reply("❌ Название предмета слишком длинное.")
+        return
     
+    # Доступные предметы с ценами и эффектами
+    SHOP_ITEMS = {
+        "зелье": {"cost": 50, "effect": lambda p: {"hp": min(p["max_hp"], p["hp"] + 30)}, "emoji": "🧪"},
+        "свиток": {"cost": 100, "effect": lambda p: {"xp": p["xp"] + 50}, "emoji": "📜"},
+        "амулет": {"cost": 200, "effect": lambda p: {"defense": min(100, p["defense"] + 5)}, "emoji": "🪬"},
+        "еда": {"cost": 30, "effect": lambda p: {"hunger": max(0, p["hunger"] - 40)}, "emoji": "🍖"},
+        "тренировка": {"cost": 80, "effect": lambda p: {
+            "strength": min(100, p["strength"] + 2),
+            "agility": min(100, p["agility"] + 2),
+            "magic": min(100, p["magic"] + 2),
+            "defense": min(100, p["defense"] + 2),
+            "speed": min(100, p["speed"] + 2)
+        }, "emoji": "🏋️"}
+    }
+    
+    if item_name not in SHOP_ITEMS:
+        available_items = ", ".join(SHOP_ITEMS.keys())
+        await message.reply(f"❌ Предмет «{item_name}» не найден. Доступные: {available_items}")
+        return
+    
+    # Загрузка игрока
+    uid = message.from_user.id
+    player = get_player(uid)
+    if not player:
+        await message.reply("❌ Игрок не найден. Используй /start для создания питомца.")
+        return
+    
+    item_config = SHOP_ITEMS[item_name]
+    
+    # Проверка баланса (монеты — пока используем XP как валюту)
+    cost = item_config["cost"]
+    if player.get("xp", 0) < cost:
+        await message.reply(f"❌ Недостаточно XP. Нужно: {cost}, у тебя: {player.get('xp', 0)}")
+        return
+    
+    # Кулдаун — проверка времени последней покупки этого предмета
+    inventory = player.get("inventory", {})
+    if not isinstance(inventory, dict):
+        inventory = {}
+    last_purchases = inventory.get("last_purchases", {})
+    
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    
+    if item_name in last_purchases:
+        try:
+            last_time = datetime.fromisoformat(last_purchases[item_name])
+            if last_time.tzinfo is None:
+                last_time = last_time.replace(tzinfo=timezone.utc)
+            elapsed = (now - last_time).total_seconds()
+            if elapsed < COOLDOWN_SECONDS:
+                remaining = int(COOLDOWN_SECONDS - elapsed)
+                await message.reply(f"⏳ Кулдаун для «{item_name}»: подожди {remaining} сек.")
+                return
+        except (ValueError, TypeError):
+            pass  # Если ошибка формата даты — пропускаем
+    
+    # Применение эффекта покупки
     try:
-        player = get_player(uid)
-        if not player:
-            await message.reply("❌ Ты ещё не создал питомца! Напиши /start")
-            return
-        
-        # Парсим номер товара
-        args = message.get_args().strip()
-        if not args or not args.isdigit():
-            await message.reply("❌ Укажи номер товара: /buy [номер]\nНапример: /buy 1")
-            return
-        
-        item_number = int(args)
-        
-        # Определяем товар по номеру
-        shop_items = {
-            1: {"name": "аптечка", "price": 50, "key": "medkit"},
-            2: {"name": "зелье силы", "price": 100, "key": "strength_potion"},
-            3: {"name": "зелье защиты", "price": 80, "key": "defense_potion"}
-        }
-        
-        if item_number not in shop_items:
-            await message.reply("❌ Неверный номер товара. Доступно: 1, 2, 3")
-            return
-        
-        item = shop_items[item_number]
-        coins = player.get("coins", 0)
-        
-        # Проверяем достаточно ли монет
-        if coins < item["price"]:
-            await message.reply(
-                f"❌ Недостаточно монет! Нужно: {item['price']}, у тебя: {coins}\n"
-                f"Заработай монеты в бою: /battle"
-            )
-            return
-        
-        # Обновляем инвентарь и монеты
-        inventory = player.get("inventory", {})
-        if not inventory:
-            inventory = {"medkit": 0, "strength_potion": 0, "defense_potion": 0}
-        
-        inventory[item["key"]] = inventory.get(item["key"], 0) + 1
-        
-        update_player(uid, {
-            "coins": coins - item["price"],
-            "inventory": inventory
-        })
-        
-        await message.reply(
-            f"✅ Куплено: {item['name']} за {item['price']} монет!\n"
-            f"💰 Осталось монет: {coins - item['price']}\n"
-            f"Используй /inventory чтобы увидеть свои предметы"
-        )
-        logger.info(f"Пользователь {uid} купил {item['name']}")
-        
+        effect_result = item_config["effect"](player)
     except Exception as e:
-        logger.error(f"Ошибка покупки для {uid}: {e}")
-        await message.reply("❌ Произошла ошибка при покупке.")
-
+        logger.error(f"Ошибка применения эффекта предмета {item_name}: {e}")
+        await message.reply("❌ Ошибка при покупке предмета. Попробуй позже.")
+        return
+    
+    # Обновление инвентаря
+    items_list = inventory.get("items", [])
+    if not isinstance(items_list, list):
+        items_list = []
+    items_list.append({"name": item_name, "purchased_at": now.isoformat()})
+    
+    # Обновление времени последней покупки
+    last_purchases[item_name] = now.isoformat()
+    
+    # Сбор данных для обновления
+    update_data = {
+        "xp": player["xp"] - cost,
+        "inventory": {
+            "items": items_list,
+            "last_purchases": last_purchases
+        }
+    }
+    
+    # Добавляем эффекты в update_data
+    for key, value in effect_result.items():
+        if key in update_data:
+            update_data[key] = value
+        else:
+            update_data[key] = value
+    
+    # Логирование
+    logger.info(f"Покупка: user={uid} item={item_name} cost={cost}")
+    
+    # Сохранение в БД
+    try:
+        update_player(uid, update_data)
+        player.update(update_data)  # Обновляем локальный объект для ответа
+    except Exception as e:
+        logger.error(f"Ошибка сохранения покупки: {e}")
+        await message.reply("❌ Не удалось сохранить покупку. Попробуй позже.")
+        return
+    
+    # Ответ пользователю
+    effect_desc = ", ".join([f"{k}: +{v - player[k]}" if k in player else f"{k}: {v}" for k, v in effect_result.items()])
+    
+    response_text = (
+        f"✅ Покупка совершена!\n\n"
+        f"{item_config['emoji']} Предмет: {item_name.capitalize()}\n"
+        f"💰 Цена: {cost} XP\n"
+        f"⭐ Эффект: {effect_desc}\n\n"
+        f"📦 В инвентаре теперь {len(items_list)} предметов."
+    )
+    
+    await message.reply(response_text)
+    logger.info(f"Покупка завершена: user={uid} item={item_name}")
 async def use_cmd(message: types.Message):
     """Использование предмета из инвентаря.
     
