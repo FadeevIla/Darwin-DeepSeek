@@ -1984,6 +1984,199 @@ async def incubate_cmd(message: types.Message):
         logger.error(f"Ошибка в incubate_cmd для пользователя {message.from_user.id}: {e}")
         await message.reply("❌ Произошла ошибка при инкубации. Попробуй позже.")
 
+async def incubate_cmd(message: types.Message):
+    """
+    Высиживание яйца питомца с механикой случайных событий.
+    
+    Питомец должен быть в виде яйца (hatched=False). При успешном высиживании 
+    яйцо вылупляется, питомец получает базовые характеристики. 
+    Процесс инкубации имеет кулдаун в 30 минут и может завершиться одним из событий:
+    - успешное вылупление (базовое)
+    - редкий мутант (+бонус к характеристикам)
+    - неудачная инкубация (потеря прогресса, но не яйца)
+    
+    Rate limiting: не чаще одного раза в 30 минут.
+    Валидация: проверка наличия питомца, состояния яйца, корректности данных.
+    
+    Args:
+        message (types.Message): Объект сообщения от пользователя
+    
+    Returns:
+        None: Результат выводится в чат через reply
+    """
+    CONSTANTS = {
+        "COOLDOWN_MINUTES": 30,
+        "INCUBATE_MAX": 100,
+        "INCUBATE_STEP": 15,
+        "MUTANT_CHANCE": 0.2,  # 20% шанс мутанта
+        "FAIL_CHANCE": 0.15,   # 15% шанс неудачи
+        "BONUS_STATS": 5,
+        "MIN_HP": 1,
+        "MAX_HUNGER": 100
+    }
+    
+    uid = str(message.from_user.id)
+    
+    # Валидация: проверяем наличие игрока
+    player = get_player(uid)
+    if not player:
+        logger.info(f"incubate_cmd: игрок {uid} не найден, создаём нового")
+        player = create_player(uid)
+        if not player:
+            await message.reply("❌ Не удалось создать профиль. Попробуй позже.")
+            return
+    
+    # Валидация: проверяем, что это яйцо
+    if player.get("hatched", True):
+        await message.reply(f"🐣 У твоего питомца {player.get('pet_name', '???')} уже вылупился! Используй /feed или /train.")
+        return
+    
+    # Валидация: проверяем структуру данных
+    if "inc_progress" not in player:
+        player["inc_progress"] = 0
+    if "last_incubate" not in player:
+        player["last_incubate"] = "2000-01-01T00:00:00+00:00"
+    
+    # Rate limiting: проверяем кулдаун
+    try:
+        last_incubate = datetime.fromisoformat(player["last_incubate"])
+        now = datetime.now(timezone.utc)
+        
+        if last_incubate.tzinfo is None:
+            last_incubate = last_incubate.replace(tzinfo=timezone.utc)
+        
+        seconds_since_last = (now - last_incubate).total_seconds()
+        if seconds_since_last < CONSTANTS["COOLDOWN_MINUTES"] * 60:
+            remaining_minutes = CONSTANTS["COOLDOWN_MINUTES"] - (seconds_since_last // 60)
+            await message.reply(
+                f"⏳ Подожди ещё {int(remaining_minutes)} мин. "
+                f"Яйцо ещё не готово к инкубации."
+            )
+            return
+            
+    except (ValueError, TypeError) as e:
+        logger.warning(f"incubate_cmd: ошибка парсинга last_incubate для {uid}: {e}")
+        await message.reply("❌ Ошибка данных инкубации. Попробуй позже.")
+        return
+    
+    # Основная логика: определяем событие
+    event_roll = random.random()
+    event_type = "standard"  # по умолчанию стандартное вылупление
+    
+    if event_roll < CONSTANTS["FAIL_CHANCE"]:
+        event_type = "fail"
+    elif event_roll < CONSTANTS["FAIL_CHANCE"] + CONSTANTS["MUTANT_CHANCE"]:
+        event_type = "mutant"
+    
+    try:
+        # Обновляем прогресс
+        current_progress = player["inc_progress"]
+        
+        if event_type == "fail":
+            # Неудачная инкубация: теряем половину прогресса
+            new_progress = max(0, current_progress - CONSTANTS["INCUBATE_STEP"] * 2)
+            player["inc_progress"] = new_progress
+            
+            # Логирование
+            logger.info(f"incubate_cmd: неудачная инкубация для {uid}, прогресс {current_progress} -> {new_progress}")
+            
+            # Сохраняем изменения
+            update_player(uid, {
+                "inc_progress": new_progress,
+                "last_incubate": datetime.now(timezone.utc).isoformat()
+            })
+            
+            await message.reply(
+                f"💥 Ой! Инкубация пошла не по плану!\n"
+                f"Прогресс уменьшен на {CONSTANTS['INCUBATE_STEP'] * 2}%.\n"
+                f"Текущий прогресс: {new_progress}%."
+            )
+            return
+            
+        # Стандартный или мутантный прогресс
+        new_progress = min(CONSTANTS["INCUBATE_MAX"], current_progress + CONSTANTS["INCUBATE_STEP"])
+        player["inc_progress"] = new_progress
+        
+        # Логирование
+        logger.info(f"incubate_cmd: успешная инкубация для {uid}, прогресс {current_progress} -> {new_progress} (тип: {event_type})")
+        
+        if new_progress >= CONSTANTS["INCUBATE_MAX"]:
+            # Вылупление!
+            pet = random_pet()
+            
+            # Работаем с мутантом
+            if event_type == "mutant":
+                pet["hp"] += CONSTANTS["BONUS_STATS"]
+                pet["max_hp"] += CONSTANTS["BONUS_STATS"]
+                pet["strength"] += CONSTANTS["BONUS_STATS"]
+                pet["agility"] += CONSTANTS["BONUS_STATS"]
+                pet["magic"] += CONSTANTS["BONUS_STATS"]
+                pet["defense"] += CONSTANTS["BONUS_STATS"]
+                pet["speed"] += CONSTANTS["BONUS_STATS"]
+            
+            # Валидация: нормализуем значения
+            hp = min(max(pet.get("hp", 10), CONSTANTS["MIN_HP"]), 9999)
+            max_hp = min(max(pet.get("max_hp", 10), CONSTANTS["MIN_HP"]), 9999)
+            hunger = min(max(pet.get("hunger", 50), 0), CONSTANTS["MAX_HUNGER"])
+            
+            # Обновление данных
+            update_player(uid, {
+                "pet_name": pet["name"],
+                "pet_emoji": pet["emoji"],
+                "hp": hp,
+                "max_hp": max_hp,
+                "strength": min(pet.get("strength", 5), 999),
+                "agility": min(pet.get("agility", 5), 999),
+                "magic": min(pet.get("magic", 5), 999),
+                "defense": min(pet.get("defense", 5), 999),
+                "speed": min(pet.get("speed", 5), 999),
+                "hunger": hunger,
+                "mood": min(pet.get("mood", 50), 100),
+                "level": min(pet.get("level", 1), 100),
+                "xp": pet.get("xp", 0),
+                "wins": 0,
+                "losses": 0,
+                "hatched": True,
+                "inc_progress": 0,
+                "last_incubate": datetime.now(timezone.utc).isoformat()
+            })
+            
+            if event_type == "mutant":
+                await message.reply(
+                    f"🌟 ПОТРЯСАЮЩЕ! Из яйца вылупился МУТАНТ!\n\n"
+                    f"{pet['emoji']} Твой новый питомец: **{pet['name']}**\n"
+                    f"💪 Все характеристики увеличены на {CONSTANTS['BONUS_STATS']}!\n\n"
+                    f"HP: {hp}/{max_hp} | Сила: {pet['strength']} | Ловкость: {pet['agility']}\n"
+                    f"Магия: {pet['magic']} | Защита: {pet['defense']} | Скорость: {pet['speed']}\n"
+                    f"Голод: {hunger}% | Настроение: {pet['mood']}%\n\n"
+                    f"Используй /feed чтобы покормить, /train чтобы тренировать!"
+                )
+            else:
+                await message.reply(
+                    f"🎉 Яйцо вылупилось!\n\n"
+                    f"{pet['emoji']} Встречай своего питомца: **{pet['name']}**\n\n"
+                    f"HP: {hp}/{max_hp} | Сила: {pet['strength']} | Ловкость: {pet['agility']}\n"
+                    f"Магия: {pet['magic']} | Защита: {pet['defense']} | Скорость: {pet['speed']}\n"
+                    f"Голод: {hunger}% | Настроение: {pet['mood']}%\n\n"
+                    f"Используй /feed чтобы покормить, /train чтобы тренировать!"
+                )
+        else:
+            # Сохраняем только прогресс и время (яйцо ещё не вылупилось)
+            update_player(uid, {
+                "inc_progress": new_progress,
+                "last_incubate": datetime.now(timezone.utc).isoformat()
+            })
+            
+            await message.reply(
+                f"🥚 Инкубация продолжается...\n"
+                f"Прогресс: {new_progress}%.\n"
+                f"Используй /incubate снова через {CONSTANTS['COOLDOWN_MINUTES']} минут."
+            )
+            
+    except Exception as e:
+        logger.error(f"incubate_cmd: критическая ошибка для {uid}: {e}")
+        await message.reply("❌ Произошла ошибка при инкубации. Попробуй позже.")
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
