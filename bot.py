@@ -480,172 +480,222 @@ async def train_cmd(message: types.Message):
     )
 
 async def battle_cmd(message: types.Message):
-    """Обрабатывает команду /battle для дуэли с другим игроком.
-    
-    Проверяет состояние питомца, наличие противника, проводит бой и обновляет статистику.
-    После победы с шансом 30% выпадает аптечка.
-    
-    Args:
-        message: Объект сообщения от aiogram
-        
-    Returns:
-        None
     """
-    MIN_HP_FOR_BATTLE = 1
-    KNOCKOUT_HP = 0
-    HEAL_CHANCE = 0.3
-    HEAL_AMOUNT = 50
+    Сражение с ботом или другим игроком на арене.
     
+    Механика:
+    - Использует пошаговую систему боя с кулдауном 30 секунд.
+    - Каждый ход питомец наносит урон, зависящий от силы (strength) с модификатором скорости (speed).
+    - Противник (бот или игрок) контратакует.
+    - Урон уменьшается защитой (defense) цели.
+    - Победа даёт XP и повышает настроение (mood), поражение снижает настроение.
+    - Событие "Критический удар" с шансом 20% наносит двойной урон.
+    
+    Аргументы:
+        message (types.Message): Команда /battle [@username]
+    """
+    # Константы
+    COOLDOWN_SECONDS = 30
+    CRIT_CHANCE = 0.20
+    CRIT_MULTIPLIER = 2.0
+    XP_PER_WIN = 20
+    XP_PER_LOSS = 5
+    MOOD_WIN_BONUS = 10
+    MOOD_LOSS_PENALTY = 10
+    MOOD_MAX = 100
+    MOOD_MIN = 0
+    MIN_DAMAGE = 1
+
     uid = str(message.from_user.id)
-    player = get_player(uid)
-    
-    if not player:
-        await message.reply("❌ Ты ещё не создал питомца! Напиши /start")
-        return
-    
-    if player.get("hp", 0) <= KNOCKOUT_HP:
-        await message.reply("💀 Твой питомец без сознания! Используй /use аптечка, чтобы восстановить его.")
-        return
-    
-    if player.get("hp", 0) < MIN_HP_FOR_BATTLE:
-        await message.reply("💀 Твой питомец слишком слаб для боя! Покорми его /feed или используй аптечку.")
-        return
-    
-    args = message.get_args()
-    if not args:
-        await message.reply("⚔️ Укажи противника: /battle @username")
-        return
-    
-    target_username = args.strip()
-    if not target_username.startswith('@'):
-        target_username = '@' + target_username
-    
+    now = datetime.now(timezone.utc)
+
+    # Валидация ввода
     try:
-        target_player = get_player_by_username(target_username)
-        if not target_player:
-            await message.reply(f"❌ Игрок {target_username} не найден. Попроси его написать /start боту.")
-            return
-        target_uid = str(target_player["user_id"])
+        player = get_player(uid)
     except Exception as e:
-        logger.error(f"Ошибка поиска пользователя: {e}")
-        await message.reply(f"❌ Не удалось найти игрока {target_username}.")
+        logger.error(f"Ошибка получения игрока {uid}: {e}")
+        await message.reply("❌ Не удалось загрузить данные. Попробуйте позже.")
         return
-    
-    target_uid = str(chat_member.user.id)
-    
-    if target_uid == uid:
-        await message.reply("🤦 Нельзя сражаться с самим собой!")
+
+    if not player:
+        await message.reply("🐣 У вас нет питомца! Используйте /start для создания.")
         return
+
+    # Проверка кулдауна
+    last_battle_str = player.get("last_battle_time")
+    if last_battle_str:
+        try:
+            last_battle = datetime.fromisoformat(last_battle_str)
+            elapsed = (now - last_battle).total_seconds()
+            if elapsed < COOLDOWN_SECONDS:
+                remaining = int(COOLDOWN_SECONDS - elapsed)
+                await message.reply(f"⏳ Подождите {remaining} сек. перед следующим боем.")
+                return
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Некорректное время last_battle_time для {uid}: {e}")
+            # Продолжаем, игнорируя ошибку формата
+
+    # Определяем цель боя
+    enemy_username = message.get_args().strip() if message.get_args() else None
     
-    target_player = get_player(target_uid)
-    
-    if not target_player:
-        await message.reply(f"❌ Игрок {target_username} ещё не активировал питомца. Попроси его написать /start боту в личные сообщения.")
-        return
-    
-    if target_player.get("hp", 0) <= KNOCKOUT_HP:
-        await message.reply(f"💀 Питомец {target_username} без сознания! Он не может сражаться.")
-        return
-    
-    if target_player.get("hp", 0) < MIN_HP_FOR_BATTLE:
-        await message.reply(f"💀 Питомец {target_username} слишком слаб для боя!")
-        return
-    
-    # Расчет урона
-    player_attack = player.get("strength", 5) + player.get("magic", 3)
-    target_defense = target_player.get("defense", 3)
-    target_speed = target_player.get("speed", 5)
-    
-    # Базовая механика боя
-    damage = max(1, player_attack - target_defense // 2)
-    
-    # Шанс критического удара
-    crit_chance = player.get("agility", 5) / 100
-    if random.random() < crit_chance:
-        damage = int(damage * 1.5)
-        crit_text = " 💥 КРИТИЧЕСКИЙ УДАР!"
+    if enemy_username:
+        # Бой с игроком по @username
+        try:
+            enemy = get_player_by_username(enemy_username)
+        except Exception as e:
+            logger.error(f"Ошибка поиска игрока {enemy_username}: {e}")
+            await message.reply("❌ Ошибка при поиске противника.")
+            return
+
+        if not enemy:
+            await message.reply(f"👤 Игрок {enemy_username} не найден.")
+            return
+        
+        enemy_uid = str(enemy["user_id"])
+        if enemy_uid == uid:
+            await message.reply("🤺 Нельзя сражаться с самим собой!")
+            return
+
+        enemy_name = enemy["pet_name"]
+        enemy_emoji = enemy["pet_emoji"]
+        enemy_hp = enemy["hp"]
+        enemy_strength = enemy["strength"]
+        enemy_defense = enemy["defense"]
+        enemy_speed = enemy["speed"]
     else:
+        # Бой с ботом
+        enemy = None
+        enemy_name = "Дикий Уроборос"
+        enemy_emoji = "🐍"
+        enemy_hp = 50
+        enemy_strength = 15
+        enemy_defense = 10
+        enemy_speed = 12
+
+    # Нормализация данных игрока
+    player_hp = max(0, player.get("hp", 50))
+    player_strength = max(0, player.get("strength", 10))
+    player_defense = max(0, player.get("defense", 5))
+    player_speed = max(0, player.get("speed", 8))
+    player_mood = max(MOOD_MIN, min(MOOD_MAX, player.get("mood", 50)))
+
+    # Инициализация боевых переменных
+    attacker_hp = player_hp
+    defender_hp = enemy_hp
+    attacker_strength = player_strength
+    attacker_speed = player_speed
+    defender_strength = enemy_strength
+    defender_defense = enemy_defense
+    defender_speed = enemy_speed
+
+    # Логирование начала боя
+    if enemy:
+        logger.info(f"Бой: {uid} ({player_hp} HP) vs {enemy_uid} ({enemy_hp} HP)")
+    else:
+        logger.info(f"Бой: {uid} ({player_hp} HP) vs BOT ({enemy_hp} HP)")
+
+    # Первый ход: атака игрока
+    crit_roll = random.random()
+    if crit_roll < CRIT_CHANCE:
+        attack_damage = int((attacker_strength * CRIT_MULTIPLIER) + (attacker_speed * 0.5))
+        crit_text = "⚡ КРИТИЧСКИЙ УДАР!"
+    else:
+        attack_damage = int(attacker_strength + (attacker_speed * 0.3))
         crit_text = ""
-    
-    # Шанс уклонения
-    dodge_chance = target_speed / 100
-    if random.random() < dodge_chance:
-        await message.reply(f"⚔️ {player.get('pet_emoji', '🐉')} {player.get('pet_name', 'Питомец')} атакует {target_username}!\n"
-                          f"🔄 {target_username} уклонился от атаки!")
+
+    # Учёт защиты
+    damage_to_defender = max(MIN_DAMAGE, attack_damage - defender_defense)
+    defender_hp = max(0, defender_hp - damage_to_defender)
+
+    # Второй ход: контратака (если противник жив)
+    if defender_hp > 0:
+        enemy_crit = random.random() < CRIT_CHANCE
+        if enemy_crit:
+            counter_damage = int(defender_strength * CRIT_MULTIPLIER + (defender_speed * 0.5))
+        else:
+            counter_damage = int(defender_strength + (defender_speed * 0.3))
+        
+        damage_to_attacker = max(MIN_DAMAGE, counter_damage - player_defense)
+        attacker_hp = max(0, attacker_hp - damage_to_attacker)
+    else:
+        enemy_crit = False
+        damage_to_attacker = 0
+
+    # Определение победителя
+    player_won = defender_hp == 0
+    player_lost = attacker_hp == 0
+    is_draw = not player_won and not player_lost
+
+    # Обновление данных игрока
+    new_data = {
+        "hp": attacker_hp,
+        "last_battle_time": now.isoformat(),
+    }
+
+    if player_won:
+        new_data["xp"] = player.get("xp", 0) + XP_PER_WIN
+        new_data["wins"] = player.get("wins", 0) + 1
+        new_data["mood"] = min(MOOD_MAX, player.get("mood", 50) + MOOD_WIN_BONUS)
+        logger.info(f"Игрок {uid} победил в бою")
+    elif player_lost:
+        new_data["xp"] = player.get("xp", 0) + XP_PER_LOSS
+        new_data["losses"] = player.get("losses", 0) + 1
+        new_data["mood"] = max(MOOD_MIN, player.get("mood", 50) - MOOD_LOSS_PENALTY)
+        logger.info(f"Игрок {uid} проиграл в бою")
+    else:
+        # Ничья - небольшое количество XP
+        new_data["xp"] = player.get("xp", 0) + XP_PER_LOSS
+
+    # Сохранение в БД
+    try:
+        update_player(uid, new_data)
+    except Exception as e:
+        logger.error(f"Ошибка обновления данных после боя для {uid}: {e}")
+        await message.reply("❌ Ошибка сохранения результатов боя.")
         return
-    
-    # Нанесение урона
-    new_hp = max(KNOCKOUT_HP, target_player.get("hp", 100) - damage)
-    
-    # Проверка нокаута
-    if new_hp <= KNOCKOUT_HP:
-        new_hp = KNOCKOUT_HP
-        knockout_text = "\n💀 ПРОТИВНИК В НОКАУТЕ!"
+
+    # Обновление данных противника (если это игрок)
+    if enemy and player_won:
+        enemy_new_data = {
+            "hp": defender_hp,
+            "losses": enemy.get("losses", 0) + 1,
+            "mood": max(MOOD_MIN, enemy.get("mood", 50) - MOOD_LOSS_PENALTY),
+        }
+        try:
+            update_player(enemy_uid, enemy_new_data)
+        except Exception as e:
+            logger.error(f"Ошибка обновления данных противника {enemy_uid}: {e}")
+
+    # Формирование сообщения о бое
+    damage_text = f"⚔️ *БОЙ!* ⚔️\n\n"
+    damage_text += f"Ваш {player.get('pet_emoji', '🐉')} *{player.get('pet_name', 'Питомец')}*\n"
+    damage_text += f"Против: {enemy_emoji} *{enemy_name}*\n\n"
+
+    # Атака игрока
+    attack_text = f"💥 *Ваша атака:* {damage_to_defender} урона"
+    if crit_text:
+        attack_text = f"{crit_text}\n{attack_text}"
+    damage_text += attack_text + "\n"
+
+    # Контратака противника
+    if defender_hp > 0:
+        if enemy_crit:
+            damage_text += f"⚡ *Контратака:* Критический удар!\n"
+        damage_text += f"💢 *Противник нанёс:* {damage_to_attacker} урона\n"
+
+    damage_text += f"\n**Результат:**\n"
+    damage_text += f"❤️ Ваше HP: {attacker_hp}\n"
+
+    if player_won:
+        damage_text += f"🎉 **ПОБЕДА!** +{XP_PER_WIN} XP"
+        damage_text += f"\n😊 Настроение улучшено!"
+    elif player_lost:
+        damage_text += f"💀 **ПОРАЖЕНИЕ!** +{XP_PER_LOSS} XP"
+        damage_text += f"\n😞 Настроение ухудшено..."
     else:
-        knockout_text = ""
-    
-    # Обновление статистики
-    target_data = {"hp": new_hp}
-    player_data = {}
-    
-    if new_hp <= KNOCKOUT_HP:
-        # Победа
-        player_data["wins"] = player.get("wins", 0) + 1
-        player_data["xp"] = player.get("xp", 0) + 20
-        target_data["losses"] = target_player.get("losses", 0) + 1
-        
-        # Шанс выпадения аптечки
-        if random.random() < HEAL_CHANCE:
-            inventory = player.get("inventory", {})
-            if isinstance(inventory, str):
-                try:
-                    import json
-                    inventory = json.loads(inventory)
-                except:
-                    inventory = {}
-            
-            if "аптечка" not in inventory:
-                inventory["аптечка"] = 0
-            inventory["аптечка"] += 1
-            player_data["inventory"] = inventory
-            
-            heal_drop_text = "\n🎁 Выпала аптечка!"
-        else:
-            heal_drop_text = ""
-        
-        # Проверка уровня
-        if player_data.get("xp", 0) >= player.get("level", 1) * 50:
-            player_data["level"] = player.get("level", 1) + 1
-            player_data["xp"] = 0
-            player_data["max_hp"] = player.get("max_hp", 100) + 10
-            player_data["hp"] = player.get("max_hp", 100) + 10
-            level_up_text = "\n🌟 УРОВЕНЬ ПОВЫШЕН!"
-        else:
-            level_up_text = ""
-    else:
-        # Поражение
-        player_data["losses"] = player.get("losses", 0) + 1
-        target_data["wins"] = target_player.get("wins", 0) + 1
-        target_data["xp"] = target_player.get("xp", 0) + 10
-        heal_drop_text = ""
-        level_up_text = ""
-    
-    # Обновление данных
-    update_player(uid, player_data)
-    update_player(target_uid, target_data)
-    
-    # Формирование ответа
-    response = (
-        f"⚔️ ДУЭЛЬ!\n"
-        f"{player.get('pet_emoji', '🐉')} {player.get('pet_name', 'Питомец')} VS {target_username}\n\n"
-        f"💥 Урон: {damage}{crit_text}{knockout_text}\n"
-        f"❤️ HP {target_username}: {target_player.get('hp', 100)} → {new_hp}\n"
-        f"{heal_drop_text}"
-        f"{level_up_text}"
-    )
-    
-    await message.reply(response)
-    logger.info(f"Бой: {uid} vs {target_uid}, урон: {damage}")
+        damage_text += f"🤝 **НИЧЬЯ!** +{XP_PER_LOSS} XP"
+
+    await message.reply(damage_text)
 async def top_cmd(message: types.Message):
     players = get_top_players(10)
     
