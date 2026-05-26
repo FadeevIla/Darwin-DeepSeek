@@ -3170,6 +3170,185 @@ async def incubate_cmd(message: types.Message):
         logger.error(f"Неожиданная ошибка в incubate_cmd: {e}")
         await message.reply("❌ Произошла ошибка при инкубации. Попробуй позже.")
 
+async def train_cmd(message: types.Message):
+    """
+    Тренировка питомца: улучшает характеристики с учетом усталости и кулдауна.
+    
+    Механики:
+    - Кулдаун 1 час между тренировками
+    - Случайное событие с 3 исходами: успех, крит, неудача
+    - Усталость снижает эффективность при частых тренировках
+    - Нормализация характеристик (не могут быть < 0)
+    
+    Константы:
+    - COOLDOWN_HOURS: часы между тренировками (1)
+    - FATIGUE_THRESHOLD: порог усталости для штрафа (3 тренировки за 6 часов)
+    - BASE_STAT_GAIN: базовый прирост характеристики (2-5)
+    - EVENT_CHANCE: шанс события (20%)
+    """
+    # Константы функции
+    COOLDOWN_HOURS = 1
+    FATIGUE_THRESHOLD = 3  # тренировок за 6 часов для усталости
+    BASE_STAT_GAIN_MIN = 2
+    BASE_STAT_GAIN_MAX = 5
+    EVENT_CHANCE = 0.20  # 20% шанс события
+    FATIGUE_TIME_WINDOW = 6  # часов для подсчета усталости
+    NORMALIZATION_MAX = 999  # максимальное значение характеристики
+
+    uid = str(message.from_user.id)
+    player = get_player(uid)
+    if not player:
+        await message.reply("❌ Сначала создай питомца через /start!")
+        return
+
+    # Валидация существования питомца
+    if not player.get("pet_name") or not player.get("pet_emoji"):
+        await message.reply("❌ У тебя нет питомца! Возьми яйцо (/egg) и высиди его (/incubate).")
+        return
+
+    # Кулдаун
+    last_train = player.get("last_train_time")
+    if last_train:
+        try:
+            last_train_dt = datetime.fromisoformat(last_train)
+            now = datetime.now(timezone.utc)
+            hours_since = (now - last_train_dt).total_seconds() / 3600
+            if hours_since < COOLDOWN_HOURS:
+                remaining_minutes = int((COOLDOWN_HOURS - hours_since) * 60)
+                await message.reply(
+                    f"⏳ {player['pet_emoji']} {player['pet_name']} ещё устал после прошлой тренировки!\n"
+                    f"Подожди {remaining_minutes} мин."
+                )
+                return
+        except ValueError as e:
+            logger.error(f"Ошибка парсинга last_train_time: {e}")
+            # Если дата кривая - сбрасываем кулдаун
+            pass
+
+    # Система усталости
+    train_history = player.get("train_history", [])
+    recent_trains = 0
+    for train_time in train_history[-FATIGUE_THRESHOLD:]:
+        try:
+            train_dt = datetime.fromisoformat(train_time)
+            if (datetime.now(timezone.utc) - train_dt).total_seconds() < FATIGUE_TIME_WINDOW * 3600:
+                recent_trains += 1
+        except ValueError:
+            continue
+
+    # Определяем эффективность тренировки
+    fatigue_multiplier = 1.0
+    if recent_trains >= FATIGUE_THRESHOLD:
+        fatigue_multiplier = 0.5  # половинная эффективность
+        fatigue_message = f"\n⚡ {player['pet_emoji']} {player['pet_name']} устал! Эффективность снижена вдвое."
+    else:
+        fatigue_multiplier = 1.0
+        fatigue_message = ""
+
+    # Выбираем случайную характеристику
+    trained_stat = random.choice(["strength", "agility", "magic", "defense", "speed"])
+    stat_names = {
+        "strength": "💪 Сила",
+        "agility": "🦎 Ловкость",
+        "magic": "🔮 Магия",
+        "defense": "🛡️ Защита",
+        "speed": "💨 Скорость"
+    }
+
+    # Базовая тренировка
+    stat_gain = random.randint(BASE_STAT_GAIN_MIN, BASE_STAT_GAIN_MAX)
+    stat_gain = int(stat_gain * fatigue_multiplier)
+
+    # Случайное событие (20% шанс)
+    event_result = None
+    if random.random() < EVENT_CHANCE:
+        event_roll = random.random()
+        if event_roll < 0.50:  # 50% из 20% = 10% общий шанс на успех
+            # Успешное событие: двойной прирост
+            stat_gain *= 2
+            event_result = "success"
+        elif event_roll < 0.85:  # 35% из 20% = 7% общий шанс на крит
+            # Критический успех: тройной прирост + восстановление HP
+            stat_gain *= 3
+            hp_gain = random.randint(5, 15)
+            player["hp"] = min(player.get("hp", 50) + hp_gain, player.get("max_hp", 100))
+            event_result = "crit"
+        else:  # 15% из 20% = 3% общий шанс на неудачу
+            # Неудача: прирост половинный
+            stat_gain = int(stat_gain * 0.5) or 1
+            player["hunger"] = min(player.get("hunger", 0) + 10, 100)
+            event_result = "fail"
+
+    # Применяем изменения с нормализацией
+    current_stat = player.get(trained_stat, 10)
+    player[trained_stat] = min(current_stat + stat_gain, NORMALIZATION_MAX)
+    player["last_train_time"] = datetime.now(timezone.utc).isoformat()
+
+    # Обновляем историю тренировок
+    train_history.append(datetime.now(timezone.utc).isoformat())
+    # Оставляем только последние 10 тренировок
+    if len(train_history) > 10:
+        train_history = train_history[-10:]
+    player["train_history"] = train_history
+
+    # Увеличиваем голод
+    hunger_gain = random.randint(5, 15)
+    player["hunger"] = min(player.get("hunger", 0) + hunger_gain, 100)
+
+    # Даем опыт
+    xp_gain = random.randint(3, 8)
+    old_level = player.get("level", 1)
+    player["xp"] = player.get("xp", 0) + xp_gain
+
+    # Проверка на повышение уровня
+    xp_for_next = old_level * 20
+    if player["xp"] >= xp_for_next:
+        player["level"] = old_level + 1
+        player["xp"] = 0
+        player["max_hp"] = player.get("max_hp", 100) + 10
+        player["hp"] = player["max_hp"]  # полное восстановление при уровне
+        level_up_message = f"\n🎉 УРОВЕНЬ ПОВЫШЕН! {player['pet_name']} теперь {player['level']} уровня!"
+    else:
+        level_up_message = f"\n📈 XP: {player['xp']}/{xp_for_next}"
+
+    # Сохраняем в БД
+    update_data = {
+        trained_stat: player[trained_stat],
+        "last_train_time": player["last_train_time"],
+        "train_history": train_history,
+        "hunger": player["hunger"],
+        "xp": player["xp"],
+        "level": player["level"],
+        "max_hp": player["max_hp"],
+        "hp": player["hp"],
+    }
+    try:
+        update_player(uid, update_data)
+        logger.info(f"Игрок {uid} потренировал {trained_stat} на +{stat_gain}")
+    except Exception as e:
+        logger.error(f"Ошибка сохранения тренировки: {e}")
+        await message.reply("❌ Произошла ошибка при сохранении тренировки. Попробуй снова.")
+        return
+
+    # Формируем сообщение о результате
+    event_messages = {
+        "success": f"\n🌟 Событие: {player['pet_emoji']} в зоне потока! Двойной прирост!",
+        "crit": f"\n⚡ КРИТИЧЕСКИЙ УСПЕХ! {player['pet_emoji']} переполнен энергией! +{hp_gain} HP!",
+        "fail": f"\n😰 Событие: {player['pet_emoji']} перенапрягся и проголодался.",
+        None: ""
+    }
+
+    response = (
+        f"🏋️ Тренировка {player['pet_name']}!\n\n"
+        f"{player['pet_emoji']} {stat_names[trained_stat]}: +{stat_gain}"
+        f"{event_messages.get(event_result, '')}"
+        f"{fatigue_message}"
+        f"{level_up_message}"
+        f"\n🍽️ Голод: {player['hunger']}/100"
+    )
+
+    await message.reply(response)
+
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN не установлен!")
