@@ -108,24 +108,49 @@ class DarwinOrchestrator:
         
         func_match = re.search(r'async def (\w+)\(', new_code)
         if not func_match:
+            self.logger.error("Не удалось извлечь имя функции")
             return None
         
         func_name = func_match.group(1)
         self.logger.info(f"Применяю патч для функции: {func_name}")
         
-        # Всегда добавляем как новую функцию перед main
-        insert_marker = 'if __name__ == "__main__":'
-        if insert_marker in original_code:
-            new_func_clean = new_code.strip() + '\n\n'
-            patched_code = original_code.replace(insert_marker, new_func_clean + insert_marker, 1)
+        # Проверяем, существует ли функция
+        if f'async def {func_name}(' in original_code:
+            # Функция есть — заменяем
+            lines = original_code.split('\n')
+            func_start = -1
+            func_end = len(lines)
+            
+            for i, line in enumerate(lines):
+                if f'async def {func_name}(' in line:
+                    func_start = i
+                elif func_start >= 0 and line.startswith('async def ') and i > func_start:
+                    func_end = i
+                    break
+            
+            if func_start >= 0:
+                old_func = '\n'.join(lines[func_start:func_end])
+                patched_code = original_code.replace(old_func, new_code.strip(), 1)
+            else:
+                # Странная ситуация — добавляем
+                patched_code = self._insert_before_main(original_code, new_code)
         else:
-            patched_code = original_code + '\n\n' + new_code.strip()
+            # Функции нет — добавляем
+            patched_code = self._insert_before_main(original_code, new_code)
         
         if patched_code == original_code:
+            self.logger.warning("Патч не изменил код")
             return None
         
         self.logger.info(f"Патч применён: {len(patched_code)} байт")
         return patched_code
+
+def _insert_before_main(self, code: str, new_func: str) -> str:
+    """Вставляет новую функцию перед if __name__ == '__main__':"""
+    marker = 'if __name__ == "__main__":'
+    if marker in code:
+        return code.replace(marker, new_func.strip() + '\n\n' + marker, 1)
+    return code + '\n\n' + new_func.strip()
 
     def _sync_feedback(self):
         """Сохраняет feedback.json в репозиторий (если есть локальные изменения)."""
